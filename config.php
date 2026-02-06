@@ -1,0 +1,62 @@
+<?php
+// Configuración de la base de datos
+define('DB_HOST', 'localhost');
+define('DB_NAME', 'los_troncos');
+define('DB_USER', 'root');
+define('DB_PASS', '');
+
+// Conexión a la base de datos
+function getConnection() {
+    try {
+        $conn = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS);
+        $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        return $conn;
+    } catch(PDOException $e) {
+        die("Error de conexión: " . $e->getMessage());
+    }
+}
+
+// Iniciar sesión
+session_start();
+
+// Función para verificar si el usuario está autenticado
+function isAuthenticated() {
+    return isset($_SESSION['usuario']);
+}
+
+// Función para obtener el nivel del usuario actual
+function getNivelUsuario() {
+    return strtolower($_SESSION['nivel'] ?? 'invitado');
+}
+
+// Función para verificar si el usuario tiene un cierto nivel
+function tieneNivel($nivel) {
+    $nivelActual = getNivelUsuario();
+    return $nivelActual === strtolower($nivel);
+}
+
+// Función para verificar si el usuario es admin
+function esAdmin() {
+    return tieneNivel('admin');
+}
+
+// Función para requerir autenticación
+function requireAuth() {
+    if (!isAuthenticated()) {
+        header('Location: login.php');
+        exit;
+    }
+}
+
+// Función para requerir nivel específico
+function requireNivel($nivel) {
+    requireAuth();
+    $nivelActual = getNivelUsuario();
+    $nivelRequerido = strtolower($nivel);
+    
+    if ($nivelActual !== $nivelRequerido && $nivelActual !== 'admin') {
+        header('HTTP/1.1 403 Forbidden');
+        die('Acceso denegado. Tu nivel es: ' . $nivelActual . '. Nivel requerido: ' . $nivelRequerido);
+    }
+}
+?>
