@@ -56,7 +56,7 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
         }
 
         body {
-            background: linear-gradient(135deg, #3e2723 0%, #5d4037 50%, #6d4c41 100%);
+            background: linear-gradient(135deg, #e8eef2 0%, #d4dfe8 50%, #c5d9e8 100%);
             font-family: 'Arial', sans-serif;
             min-height: 100vh;
             display: flex;
@@ -64,19 +64,19 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
             align-items: center;
             padding: 20px;
         }
-
-        .container-cocina {
+ 
+        .container-cocina { 
             background: #f5f5f5;
             border-radius: 15px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
             max-width: 900px;
             width: 100%;
             overflow: hidden;
-            border: 5px solid #4e342e;
+            border: 5px solid #5f5d5c;
         }
 
         .header-cocina {
-            background: linear-gradient(135deg, #5d4037 0%, #4e342e 100%);
+            background: linear-gradient(135deg, #33bc21 0%, #31c529 100%);
             color: #f5f5f5;
             padding: 30px;
             text-align: center;
@@ -125,7 +125,7 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
 
         .tiempo-transcurrido {
             font-size: 16px;
-            background: #4e342e;
+            background: #757575;
             padding: 8px 15px;
             border-radius: 20px;
             display: inline-block;
@@ -147,7 +147,7 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
             background: linear-gradient(135deg, #bdbdbd 0%, #9e9e9e 100%);
             padding: 25px;
             border-radius: 10px;
-            border-left: 8px solid #5d4037;
+            border-left: 8px solid #757575;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -169,7 +169,7 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
         }
 
         .articulo-cantidad {
-            background: #5d4037;
+            background: #757575;
             color: #f5f5f5;
             padding: 20px 30px;
             border-radius: 50%;
@@ -204,7 +204,7 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
         }
 
         .btn-volver {
-            background: #5d4037;
+            background: #757575;
             color: #f5f5f5;
             border: none;
             padding: 12px 30px;
@@ -216,11 +216,52 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
         }
 
         .btn-volver:hover {
-            background: #4e342e;
+            background: #616161;
             transform: translateY(-2px);
             box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
         }
+        .btn-avisar-mozo {
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+            color: #ffffff;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 6px 20px rgba(33, 150, 243, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 18px;
+        }
 
+        .btn-avisar-mozo:hover {
+            background: linear-gradient(135deg, #1976D2 0%, #1565C0 100%);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(33, 150, 243, 0.6);
+        }
+
+        .btn-avisar-mozo:active {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+        }
+
+        .campana-icon {
+            font-size: 24px;
+            animation: campanaShake 0.5s ease-in-out;
+        }
+
+        @keyframes campanaShake {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(-15deg); }
+            75% { transform: rotate(15deg); }
+        }
+
+        .btn-avisar-mozo:hover .campana-icon {
+            animation: campanaShake 0.5s ease-in-out infinite;
+        }
         @media (max-width: 768px) {
             .reloj {
                 font-size: 48px;
@@ -247,6 +288,29 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
                 padding: 15px 20px;
                 font-size: 32px;
             }
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+        }
 
             .articulo-hora {
                 margin-left: 0;
@@ -333,6 +397,7 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
 
         <!-- PIE DE PÁGINA -->
         <div class="pie-cocina">
+            <button class="btn-avisar-mozo" onclick="avisarMozo()"><span class="campana-icon">🔔</span> Pedido Listo</button>
             <button class="btn-volver" onclick="volverMenu()">← Volver al Menú</button>
         </div>
     </div>
@@ -375,6 +440,79 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
 
         function volverMenu() {
             window.location.href = 'menu_principal.php';
+        }
+
+        function avisarMozo() {
+            // Crear una solicitud AJAX para notificar al mozo
+            const formData = new FormData();
+            formData.append('action', 'notificar_pedido_listo');
+            formData.append('mesa', numeroMesa);
+
+            fetch('api.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Mostrar notificación visual
+                    mostrarNotificacionExito('Mozo notificado: Pedido de mesa ' + numeroMesa + ' listo');
+                } else {
+                    mostrarNotificacionError('Error al notificar al mozo');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                mostrarNotificacionError('Error de conexión');
+            });
+        }
+
+        function mostrarNotificacionExito(mensaje) {
+            const notif = document.createElement('div');
+            notif.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #4CAF50;
+                color: white;
+                padding: 20px 30px;
+                border-radius: 8px;
+                font-size: 16px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                z-index: 10000;
+                animation: slideIn 0.3s ease-out;
+            `;
+            notif.textContent = '✓ ' + mensaje;
+            document.body.appendChild(notif);
+            
+            setTimeout(() => {
+                notif.style.animation = 'slideOut 0.3s ease-out';
+                setTimeout(() => notif.remove(), 300);
+            }, 3000);
+        }
+
+        function mostrarNotificacionError(mensaje) {
+            const notif = document.createElement('div');
+            notif.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #f44336;
+                color: white;
+                padding: 20px 30px;
+                border-radius: 8px;
+                font-size: 16px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                z-index: 10000;
+                animation: slideIn 0.3s ease-out;
+            `;
+            notif.textContent = '✗ ' + mensaje;
+            document.body.appendChild(notif);
+            
+            setTimeout(() => {
+                notif.style.animation = 'slideOut 0.3s ease-out';
+                setTimeout(() => notif.remove(), 300);
+            }, 3000);
         }
     </script>
 </body>

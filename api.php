@@ -82,9 +82,9 @@ try {
                 $stmt = $conn->prepare($sql);
                 $stmt->execute([$data['cantidad'], $data['mesa'], $data['producto_id']]);
             } else {
-                // Insertar nuevo
-                $sql = "INSERT INTO `mesa pedido` (`mesa`, `producto_id`, `cantidad`, `precio_unitario`) 
-                        VALUES (?, ?, ?, ?)";
+                // Insertar nuevo con id_mozo
+                $sql = "INSERT INTO `mesa pedido` (`mesa`, `producto_id`, `cantidad`, `precio_unitario`, `id_mozo`) 
+                        VALUES (?, ?, ?, ?, ?)";
                 $stmt = $conn->prepare($sql);
                 
                 // Obtener el precio del producto
@@ -93,11 +93,15 @@ try {
                 $producto = $precioStmt->fetch(PDO::FETCH_ASSOC);
                 $precio = $producto['precio'] ?? 0;
                 
+                // Obtener id del mozo actual
+                $idMozo = $_SESSION['id_usuario'] ?? null;
+                
                 $stmt->execute([
                     $data['mesa'],
                     $data['producto_id'],
                     $data['cantidad'],
-                    $precio
+                    $precio,
+                    $idMozo
                 ]);
             }
             echo json_encode(['success' => true, 'message' => 'Producto agregado al pedido']);
@@ -253,6 +257,16 @@ try {
             $stmt = $conn->prepare($sql);
             $stmt->execute([$mes]);
             echo json_encode(['success' => true, 'message' => 'Pedidos del mes eliminados']);
+            break;
+
+        case 'notificar_pedido_listo':
+            // Guardar notificación para el mozo
+            $mesa = $data['mesa'] ?? 0;
+            $sql = "INSERT INTO `notificaciones` (`tipo`, `mensaje`, `mesa`, `fecha_hora`, `leido`) 
+                    VALUES ('pedido_listo', 'Pedido de mesa " . intval($mesa) . " listo', ?, NOW(), 0)";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute([$mesa]);
+            echo json_encode(['success' => true, 'message' => 'Mozo notificado']);
             break;
             
         default:

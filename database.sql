@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS `mesa pedido` (
   `mesa` int(11) NOT NULL,
   `producto_id` int(11) NOT NULL,
   `cantidad` int(11) NOT NULL,
+  `precio_unitario` decimal(10,2) DEFAULT 0,
+  `id_mozo` int(11),
   `fecha_hora` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_mesa` (`mesa`),
@@ -82,6 +84,19 @@ INSERT INTO `productos` (`nombre`, `tipo`, `categoria`, `precio`, `stock`) VALUE
 ('Té Verde', 'Bebida', 'Té', 2.50, 80),
 ('Té Negro', 'Bebida', 'Té', 2.50, 80),
 ('Chocolate Caliente', 'Bebida', 'Caliente', 4.00, 60);
+
+-- Tabla de notificaciones para mozo
+CREATE TABLE IF NOT EXISTS `notificaciones` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `tipo` varchar(50) NOT NULL,
+  `mensaje` varchar(255) NOT NULL,
+  `mesa` int(11),
+  `fecha_hora` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `leido` tinyint(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  KEY `idx_leido` (`leido`),
+  KEY `idx_fecha` (`fecha_hora`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Mensaje de confirmación
 SELECT 'Base de datos creada exitosamente!' as Status;
