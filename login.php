@@ -49,135 +49,203 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Los Troncos</title>
+    <title>Iniciar Sesión — Los Troncos</title>
+    <link rel="stylesheet" href="styles.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        /* ── Layout general ── */
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            background: #dde1e7;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
+            min-height: 100vh;
+            padding: 0;
+        }
+
+        /* ── Banner superior (igual al menu-bar del sistema) ── */
+        .login-topbar {
+            background: #2c3e50;
+            color: #fff;
+            padding: 16px 32px;
+            display: flex;
             align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 10px rgba(0,0,0,.15);
+        }
+        .login-topbar .sistema-nombre {
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: .5px;
+        }
+        .login-topbar .sistema-sub {
+            font-size: .85rem;
+            color: #b0bec5;
+            margin-top: 2px;
+        }
+        .login-topbar .restaurante-badge {
+            background: #2e7d32;
+            color: #fff;
+            font-size: .82rem;
+            font-weight: 600;
+            padding: 6px 16px;
+            border-radius: 6px;
+            letter-spacing: .3px;
         }
 
-        .login-container {
+        /* ── Área central ── */
+        .login-wrap {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        /* ── Card (igual a .main-content del sistema) ── */
+        .login-card {
             background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,.12);
+            padding: 40px 44px;
             width: 100%;
-            max-width: 400px;
+            max-width: 420px;
         }
 
-        .login-header {
+        .login-card-header {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 32px;
+            padding-bottom: 24px;
+            border-bottom: 2px solid #dee2e6;
         }
-
-        .login-header h1 {
-            color: #333;
-            font-size: 28px;
-            margin-bottom: 10px;
+        .login-card-header .icono {
+            width: 64px;
+            height: 64px;
+            background: #2e7d32;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+            font-size: 1.8rem;
         }
-
-        .login-header p {
+        .login-card-header h2 {
+            color: #2c3e50;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .login-card-header p {
             color: #666;
-            font-size: 14px;
+            font-size: .9rem;
         }
 
-        .form-group {
-            margin-bottom: 20px;
-        }
-
+        /* ── Etiquetas de campo ── */
         .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #333;
-            font-weight: 500;
+            font-size: .92rem;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+        .form-control:focus {
+            border-color: #1565c0;
+            box-shadow: 0 0 0 3px rgba(21,101,192,.12);
         }
 
-        .form-group input {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 14px;
-            transition: border-color 0.3s;
+        /* ── Mensaje de error ── */
+        .login-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            border-left: 4px solid #c62828;
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-bottom: 22px;
+            font-size: .9rem;
         }
 
-        .form-group input:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        .error-message {
-            background-color: #fee;
-            color: #c33;
-            padding: 12px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            border-left: 4px solid #c33;
-        }
-
+        /* ── Botón principal (igual a .btn-primary del sistema) ── */
         .btn-login {
             width: 100%;
-            padding: 12px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 13px;
+            background: #1565c0;
             color: white;
             border: none;
-            border-radius: 5px;
-            font-size: 16px;
+            border-radius: 6px;
+            font-size: 1rem;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: background .2s, transform .2s, box-shadow .2s;
+            margin-top: 8px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-
         .btn-login:hover {
+            background: #0d47a1;
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 4px 12px rgba(0,0,0,.18);
         }
+        .btn-login:active { transform: translateY(0); }
 
-        .btn-login:active {
-            transform: translateY(0);
+        /* ── Footer ── */
+        .login-footer {
+            text-align: center;
+            padding: 14px;
+            background: #2c3e50;
+            color: #78909c;
+            font-size: .8rem;
         }
     </style>
 </head>
 <body>
-    <div class="login-container">
-        <div class="login-header">
-            <h1>🍽️ Los Troncos</h1>
-            <p>Sistema de Gestión de Pedidos</p>
+
+<!-- Banner superior -->
+<div class="login-topbar">
+    <div>
+        <div class="sistema-nombre">Sistema de Gestión de Restaurante</div>
+        <div class="sistema-sub">Acceso al sistema</div>
+    </div>
+    <div class="restaurante-badge">Los Troncos</div>
+</div>
+
+<!-- Card central -->
+<div class="login-wrap">
+    <div class="login-card">
+
+        <div class="login-card-header">
+            <div class="icono">&#127869;</div>
+            <h2>Iniciar Sesión</h2>
+            <p>Ingresá tus credenciales para continuar</p>
         </div>
 
         <?php if (!empty($error)): ?>
-            <div class="error-message">
+            <div class="login-error">
                 <?php echo htmlspecialchars($error); ?>
             </div>
         <?php endif; ?>
 
         <form method="POST" action="">
             <div class="form-group">
-                <label for="usuario">Usuario:</label>
-                <input type="text" id="usuario" name="usuario" 
-                       value="<?php echo htmlspecialchars($usuario); ?>" 
+                <label for="usuario">Usuario</label>
+                <input type="text" id="usuario" name="usuario" class="form-control"
+                       value="<?php echo htmlspecialchars($usuario); ?>"
+                       placeholder="Ingresá tu nombre de usuario"
                        required autofocus>
             </div>
 
             <div class="form-group">
-                <label for="password">Contraseña:</label>
-                <input type="password" id="password" name="password" required>
+                <label for="password">Contraseña</label>
+                <input type="password" id="password" name="password" class="form-control"
+                       placeholder="Ingresá tu contraseña"
+                       required>
             </div>
 
-            <button type="submit" class="btn-login">Inicia Sesión</button>
+            <button type="submit" class="btn-login">Ingresar al Sistema</button>
         </form>
+
     </div>
+</div>
+
+<!-- Footer -->
+<div class="login-footer">
+    Sistema de Gestión de Restaurante &mdash; Los Troncos
+</div>
+
 </body>
 </html>

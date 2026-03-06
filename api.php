@@ -333,7 +333,151 @@ try { // Inicia un bloque try-catch para capturar errores. getConnection() viene
             $stmt->execute([$mesa]);
             echo json_encode(['success' => true]);
             break;
-            
+
+        case 'obtener_estadisticas':
+            // Mesas ocupadas
+            $stmtOc = $conn->query("SELECT `mesa` FROM `mesa pedido` GROUP BY `mesa`");
+            $mesasOcupadas = array_column($stmtOc->fetchAll(PDO::FETCH_ASSOC), 'mesa');
+            $totalOcupadas = count($mesasOcupadas);
+            $totalLibres   = 40 - $totalOcupadas;
+
+            // Mesas listas (notificaciones no leídas)
+            $stmtLis = $conn->query("SELECT DISTINCT `mesa`, `mensaje` FROM `notificaciones` WHERE `tipo` = 'pedido_listo' AND `leido` = 0");
+            $rowsListas = $stmtLis->fetchAll(PDO::FETCH_ASSOC);
+            $mesasListas = array_column($rowsListas, 'mesa');
+            $mensajes    = [];
+            foreach ($rowsListas as $r) { $mensajes[$r['mesa']] = $r['mensaje']; }
+
+            // Mozos activos (con al menos una mesa abierta)
+            $stmtMoz = $conn->query("SELECT COUNT(DISTINCT `id_mozo`) as total FROM `mesa pedido` WHERE `id_mozo` IS NOT NULL");
+            $mozosActivos = intval($stmtMoz->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+
+            echo json_encode([
+                'success'       => true,
+                'libres'        => $totalLibres,
+                'ocupadas'      => $totalOcupadas,
+                'listas'        => count($mesasListas),
+                'mozos_activos' => $mozosActivos,
+                'mesas_ocupadas'=> $mesasOcupadas,
+                'mesas_listas'  => $mesasListas,
+                'mensajes'      => $mensajes,
+            ]);
+            break;
+
+        // ===== CERRAR DÍA (solo admin) =====
+        // Guarda en resumenes_diarios todas las mesas con pedido activo y las vacía
+        case 'cerrar_dia':
+            if (!esAdmin()) { echo json_encode(['success' => false, 'message' => 'Acceso denegado']); break; }
+
+            // Obtener todas las mesas con pedidos activos
+            $sqlMesas = "SELECT `mp`.`mesa`,
+                                SUM(`mp`.`cantidad` * `mp`.`precio_unitario`) AS total,
+                                GROUP_CONCAT(`p`.`nombre` ORDER BY `p`.`nombre` SEPARATOR ', ') AS productos
+                         FROM `mesa pedido` AS `mp`
+                         JOIN `productos` AS `p` ON `mp`.`producto_id` = `p`.`id`
+                         GROUP BY `mp`.`mesa`";
+            $stmtMesas = $conn->query($sqlMesas);
+            $mesasAbiertas = $stmtMesas->fetchAll(PDO::FETCH_ASSOC);
+
+            if (count($mesasAbiertas) === 0) {
+                echo json_encode(['success' => false, 'message' => 'No hay mesas abiertas para cerrar']);
+                break;
+            }
+
+            $fecha = date('Y-m-d');
+            $hora  = date('H:i:s');
+            $sqlIns = "INSERT INTO `resumenes_diarios` (`fecha`, `hora`, `mesa`, `total`, `productos`)
+                       VALUES (?, ?, ?, ?, ?)";
+            $stmtIns = $conn->prepare($sqlIns);
+
+            foreach ($mesasAbiertas as $m) {
+                if (floatval($m['total']) > 0) {
+                    $stmtIns->execute([$fecha, $hora, $m['mesa'], $m['total'], $m['productos']]);
+                }
+            }
+
+            // Limpiar mesa pedido
+            $conn->exec("DELETE FROM `mesa pedido`");
+            // Marcar notificaciones como leídas
+            $conn->exec("UPDATE `notificaciones` SET `leido` = 1 WHERE `tipo` = 'pedido_listo' AND `leido` = 0");
+
+            $qty = count($mesasAbiertas);
+            echo json_encode(['success' => true, 'message' => "Día cerrado correctamente. $qty mesa(s) guardadas."]);
+            break;
+
+        // ===== CRUD DE USUARIOS (solo admin) =====
+        case 'obtener_usuarios':            if (!esAdmin()) { echo json_encode(['success' => false, 'message' => 'Acceso denegado']); break; }
+            $sql = "SELECT `id_usuario`, `nombre`, `nivel` FROM `usuario` ORDER BY `nombre`";
+            $stmt = $conn->query($sql);
+            $usuarios = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            echo json_encode(['success' => true, 'usuarios' => $usuarios]);
+            break;
+
+        case 'agregar_usuario':
+            if (!esAdmin()) { echo json_encode(['success' => false, 'message' => 'Acceso denegado']); break; }
+            $nombre    = trim($data['nombre'] ?? '');
+            $password  = trim($data['password'] ?? '');
+            $nivel     = trim($data['nivel'] ?? 'mozo');
+            if ($nombre === '' || $password === '') {
+                echo json_encode(['success' => false, 'message' => 'Nombre y contraseña son obligatorios']);
+                break;
+            }
+            // Verificar que no exista el nombre
+            $check = $conn->prepare("SELECT COUNT(*) FROM `usuario` WHERE LOWER(`nombre`) = LOWER(?)");
+            $check->execute([$nombre]);
+            if ($check->fetchColumn() > 0) {
+                echo json_encode(['success' => false, 'message' => 'Ya existe un usuario con ese nombre']);
+                break;
+            }
+            $sql  = "INSERT INTO `usuario` (`nombre`, `contraseña`, `nivel`) VALUES (?, ?, ?)";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute([$nombre, $password, $nivel]);
+            echo json_encode(['success' => true, 'message' => 'Usuario creado correctamente', 'id' => $conn->lastInsertId()]);
+            break;
+
+        case 'actualizar_usuario':
+            if (!esAdmin()) { echo json_encode(['success' => false, 'message' => 'Acceso denegado']); break; }
+            $id       = intval($data['id_usuario'] ?? 0);
+            $nombre   = trim($data['nombre'] ?? '');
+            $nivel    = trim($data['nivel'] ?? 'mozo');
+            $password = trim($data['password'] ?? '');
+            if ($id === 0 || $nombre === '') {
+                echo json_encode(['success' => false, 'message' => 'Datos incompletos']);
+                break;
+            }
+            // Verificar nombre duplicado (excluyendo el propio usuario)
+            $check = $conn->prepare("SELECT COUNT(*) FROM `usuario` WHERE LOWER(`nombre`) = LOWER(?) AND `id_usuario` != ?");
+            $check->execute([$nombre, $id]);
+            if ($check->fetchColumn() > 0) {
+                echo json_encode(['success' => false, 'message' => 'Ya existe otro usuario con ese nombre']);
+                break;
+            }
+            if ($password !== '') {
+                $sql  = "UPDATE `usuario` SET `nombre` = ?, `contraseña` = ?, `nivel` = ? WHERE `id_usuario` = ?";
+                $stmt = $conn->prepare($sql);
+                $stmt->execute([$nombre, $password, $nivel, $id]);
+            } else {
+                $sql  = "UPDATE `usuario` SET `nombre` = ?, `nivel` = ? WHERE `id_usuario` = ?";
+                $stmt = $conn->prepare($sql);
+                $stmt->execute([$nombre, $nivel, $id]);
+            }
+            echo json_encode(['success' => true, 'message' => 'Usuario actualizado correctamente']);
+            break;
+
+        case 'eliminar_usuario':
+            if (!esAdmin()) { echo json_encode(['success' => false, 'message' => 'Acceso denegado']); break; }
+            $id = intval($data['id_usuario'] ?? 0);
+            // No permitir eliminar al usuario actualmente autenticado
+            if ($id === intval($_SESSION['usuario_id'] ?? 0)) {
+                echo json_encode(['success' => false, 'message' => 'No puedes eliminar tu propia cuenta']);
+                break;
+            }
+            $sql  = "DELETE FROM `usuario` WHERE `id_usuario` = ?";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute([$id]);
+            echo json_encode(['success' => true, 'message' => 'Usuario eliminado correctamente']);
+            break;
+
         default:
             echo json_encode(['success' => false, 'message' => 'Acción no válida']);
     }

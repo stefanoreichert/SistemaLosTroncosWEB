@@ -2,619 +2,579 @@
 require_once 'config.php';
 requireAuth();
 
-// Debug: Mostrar nivel
 $nivelActual = getNivelUsuario();
 if ($nivelActual !== 'cocina' && $nivelActual !== 'admin') {
-    die('ERROR: Tu nivel es "' . htmlspecialchars($nivelActual) . '". Se requiere "cocina" o "admin". Tu sesión: ' . print_r($_SESSION, true));
+    die('Acceso denegado. Nivel requerido: cocina o admin.');
 }
 
 requireNivel('cocina');
 
-$numeroMesa = isset($_GET['mesa']) ? (int)$_GET['mesa'] : 1;
-
-// Obtener pedido de la mesa con información del mozo
-function obtenerPedidoCocina($mesa) {
+// ──────────────────────────────────────────────────────────────────
+//  Obtiene TODOS los pedidos activos de TODAS las mesas,
+//  excluyendo bebidas. Retorna array agrupado por mesa.
+// ──────────────────────────────────────────────────────────────────
+function obtenerTodosLosPedidosCocina() {
     $conn = getConnection();
-    $sql = "SELECT `mp`.`mesa`, `mp`.`producto_id`, `p`.`nombre`, `mp`.`cantidad`, 
-                   `mp`.`fecha_hora`, COALESCE(`u`.`nombre`, 'Desconocido') as mozo,
-                   COALESCE(`tp`.`Nombre`, 'Otros') as tipo_producto
+    $sql = "SELECT `mp`.`mesa`,
+                   `p`.`nombre`,
+                   `mp`.`cantidad`,
+                   `mp`.`fecha_hora`,
+                   COALESCE(`u`.`nombre`, 'Desconocido')  AS mozo,
+                   COALESCE(`tp`.`Nombre`, 'Otros')        AS tipo_producto,
+                   COALESCE(`t`.`Nombre`, '')              AS tipo_principal
             FROM `mesa pedido` AS `mp`
-            JOIN `productos` AS `p` ON `mp`.`producto_id` = `p`.`id`
-            LEFT JOIN `usuario` AS `u` ON `mp`.`id_mozo` = `u`.`id_usuario`
+            JOIN `productos`       AS `p`  ON `mp`.`producto_id`      = `p`.`id`
+            LEFT JOIN `usuario`    AS `u`  ON `mp`.`id_mozo`          = `u`.`id_usuario`
             LEFT JOIN `tipo producto` AS `tp` ON `p`.`Id_tipo_producto` = `tp`.`Id_tipo_producto`
-            WHERE `mp`.`mesa` = ?
-            ORDER BY `mp`.`fecha_hora` ASC";
-    $stmt = $conn->prepare($sql);
-    $stmt->execute([$mesa]);
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            LEFT JOIN `tipo`       AS `t`  ON `p`.`id_tipo`            = `t`.`Id_tipo`
+            WHERE LOWER(COALESCE(`t`.`Nombre`, '')) NOT LIKE '%bebid%'
+            ORDER BY `mp`.`mesa` ASC, `mp`.`fecha_hora` ASC";
+    $stmt = $conn->query($sql);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $porMesa = [];
+    foreach ($rows as $r) {
+        $m = $r['mesa'];
+        if (!isset($porMesa[$m])) {
+            $porMesa[$m] = [
+                'mesa'  => $m,
+                'mozo'  => $r['mozo'],
+                'hora'  => $r['fecha_hora'],
+                'items' => [],
+                'tipos' => [],
+            ];
+        }
+        $porMesa[$m]['items'][] = $r;
+        $porMesa[$m]['tipos'][] = $r['tipo_producto'];
+    }
+    foreach ($porMesa as &$d) {
+        $d['tipos'] = array_values(array_unique($d['tipos']));
+        sort($d['tipos']);
+    }
+    unset($d);
+    ksort($porMesa);
+    return $porMesa;
 }
 
-// Obtener la hora mínima del pedido (cuando llegó el primer artículo)
-function obtenerHoraLlegadaPedido($mesa) {
+function obtenerNotasPorMesa(array $mesas) {
+    if (empty($mesas)) return [];
     $conn = getConnection();
-    $sql = "SELECT MIN(`fecha_hora`) as hora_llegada FROM `mesa pedido` WHERE `mesa` = ?";
+    $placeholders = implode(',', array_fill(0, count($mesas), '?'));
+    $sql  = "SELECT `mesa`, COALESCE(MAX(`notas`), '') AS notas
+             FROM `mesa pedido`
+             WHERE `mesa` IN ($placeholders)
+             GROUP BY `mesa`";
     $stmt = $conn->prepare($sql);
-    $stmt->execute([$mesa]);
-    $result = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $result['hora_llegada'] ?? date('Y-m-d H:i:s');
+    $stmt->execute($mesas);
+    $result = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $result[$r['mesa']] = $r['notas'];
+    }
+    return $result;
 }
 
-// Obtener notas del pedido
-function obtenerNotasMesa($mesa) {
-    $conn = getConnection();
-    $sql  = "SELECT COALESCE(MAX(`notas`), '') as notas FROM `mesa pedido` WHERE `mesa` = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->execute([$mesa]);
-    $row  = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $row['notas'] ?? '';
-}
+$porMesa = obtenerTodosLosPedidosCocina();
+$notas   = obtenerNotasPorMesa(array_keys($porMesa));
 
-$pedido = obtenerPedidoCocina($numeroMesa);
-$horaPedido = obtenerHoraLlegadaPedido($numeroMesa);
-$mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
-$tipos = array_values(array_unique(array_column($pedido, 'tipo_producto')));
-sort($tipos);
-$notasMesa = obtenerNotasMesa($numeroMesa);
+$tiposGlobales = [];
+foreach ($porMesa as $d) {
+    $tiposGlobales = array_merge($tiposGlobales, $d['tipos']);
+}
+$tiposGlobales = array_values(array_unique($tiposGlobales));
+sort($tiposGlobales);
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Orden de Cocina - Mesa <?php echo $numeroMesa; ?></title>
+    <title>Panel de Cocina</title>
     <link rel="stylesheet" href="styles.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            background: linear-gradient(135deg, #e8eef2 0%, #d4dfe8 50%, #c5d9e8 100%);
-            font-family: 'Arial', sans-serif;
+            background: #dde1e7;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            padding: 20px 20px 55px;
-        }
- 
-        .container-cocina { 
-            background: #f5f5f5;
-            border-radius: 15px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-            max-width: 900px;
-            width: 100%;
-            overflow: hidden;
-            border: 5px solid #5f5d5c;
+            color: #2c3e50;
         }
 
+        /* === HEADER === */
         .header-cocina {
-            background: linear-gradient(135deg, #33bc21 0%, #31c529 100%);
-            color: #f5f5f5;
-            padding: 30px;
-            text-align: center;
-            border-bottom: 5px solid #212121;
+            background: #2c3e50;
+            color: #fff;
+            padding: 15px 30px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 3px solid #1a252f;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 10px rgba(0,0,0,.15);
         }
-
-        .reloj-container {
-            margin-bottom: 20px;
+        .header-cocina h1 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: #fff;
+            letter-spacing: 1px;
         }
-
         .reloj {
-            font-size: 72px;
+            font-size: 1.6rem;
             font-weight: bold;
             font-family: 'Courier New', monospace;
-            letter-spacing: 10px;
-            text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
-            color: #fff;
+            letter-spacing: 3px;
+            color: #ecf0f1;
         }
-
-        .titulo-mesa {
-            font-size: 48px;
-            margin: 20px 0 10px 0;
-            font-weight: bold;
-            color: #fff;
-        }
-
-        .info-pedido {
-            background: rgba(0, 0, 0, 0.2);
-            padding: 15px;
-            border-radius: 10px;
-            margin-top: 15px;
-            border: 2px solid #9e9e9e;
-        }
-
-        .info-mozo {
-            font-size: 18px;
-            margin-bottom: 8px;
-            color: #f5f5f5;
-        }
-
-        .info-hora {
-            font-size: 16px;
-            margin-bottom: 8px;
-            color: #f5f5f5;
-        }
-
-        .tiempo-transcurrido {
-            font-size: 16px;
-            background: #757575;
-            padding: 8px 15px;
-            border-radius: 20px;
-            display: inline-block;
-            margin-top: 10px;
-            color: #fff;
-            border: 2px solid #9e9e9e;
-        }
-
-        .contenido-cocina {
-            padding: 40px;
-        }
-
-        .ordenes-container {
-            display: grid;
-            gap: 20px;
-        }
-
-        .articulo {
-            background: linear-gradient(135deg, #bdbdbd 0%, #9e9e9e 100%);
-            padding: 25px;
-            border-radius: 10px;
-            border-left: 8px solid #757575;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .articulo:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
-            background: linear-gradient(135deg, #9e9e9e 0%, #757575 100%);
-        }
-
-        .articulo-nombre {
-            font-size: 32px;
-            font-weight: bold;
-            color: #212121;
-            flex-grow: 1;
-        }
-
-        .articulo-cantidad {
-            background: #757575;
-            color: #f5f5f5;
-            padding: 20px 30px;
-            border-radius: 50%;
-            font-size: 40px;
-            font-weight: bold;
-            min-width: 100px;
-            text-align: center;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-        }
-
-        .articulo-hora {
-            margin-left: 20px;
-            font-size: 16px;
-            color: #212121;
-            text-align: center;
-            min-width: 90px;
-            font-weight: bold;
-        }
-
-        .sin-ordenes {
-            text-align: center;
-            padding: 60px 20px;
-            color: #666;
-            font-size: 20px;
-        }
-
-        .pie-cocina {
-            background: #9e9e9e;
-            padding: 20px;
-            text-align: center;
-            border-top: 3px solid #5d4037;
-        }
-
         .btn-volver {
-            background: #757575;
-            color: #f5f5f5;
-            border: none;
-            padding: 12px 30px;
-            border-radius: 25px;
-            font-size: 16px;
+            background: rgba(255,255,255,.12);
+            border: 2px solid rgba(255,255,255,.3);
+            color: #fff;
+            padding: 8px 18px;
+            border-radius: 6px;
             cursor: pointer;
-            transition: background 0.3s, transform 0.2s;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            font-size: .9rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: background .2s;
         }
+        .btn-volver:hover { background: rgba(255,255,255,.22); }
 
-        .btn-volver:hover {
-            background: #616161;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
-        }
-        .btn-avisar-mozo {
-            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
-            color: #ffffff;
-            border: none;
-            padding: 15px 40px;
-            border-radius: 50px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 6px 20px rgba(33, 150, 243, 0.4);
+        /* === CONTADORES === */
+        .contadores-bar {
+            background: #37474f;
+            padding: 10px 30px;
             display: flex;
-            align-items: center;
-            gap: 12px;
-            font-size: 18px;
+            gap: 28px;
+            font-size: .92rem;
+            color: #b0bec5;
+            border-bottom: 2px solid #263238;
         }
+        .contadores-bar span strong { color: #fff; font-size: 1rem; }
 
-        .btn-avisar-mozo:hover {
-            background: linear-gradient(135deg, #1976D2 0%, #1565C0 100%);
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(33, 150, 243, 0.6);
-        }
-
-        .btn-avisar-mozo:active {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
-        }
-
-        .campana-icon {
-            font-size: 24px;
-            animation: campanaShake 0.5s ease-in-out;
-        }
-
-        @keyframes campanaShake {
-            0%, 100% { transform: rotate(0deg); }
-            25% { transform: rotate(-15deg); }
-            75% { transform: rotate(15deg); }
-        }
-
-        .btn-avisar-mozo:hover .campana-icon {
-            animation: campanaShake 0.5s ease-in-out infinite;
-        }
-
-        /* ===== FILTROS DE COCINA ===== */
-        .filtros-cocina {
-            background: rgba(0, 0, 0, 0.25);
-            padding: 15px 30px;
+        /* === FILTROS === */
+        .filtros-bar {
+            background: #f8f9fa;
+            padding: 12px 30px;
             display: flex;
             flex-wrap: wrap;
             gap: 10px;
+            align-items: center;
             justify-content: center;
-            border-bottom: 3px solid #212121;
+            border-bottom: 2px solid #dee2e6;
         }
-
-        .filtros-cocina-titulo {
+        .filtros-bar label {
             width: 100%;
             text-align: center;
-            color: rgba(255,255,255,0.8);
-            font-size: 13px;
-            margin-bottom: 5px;
-            font-weight: bold;
+            color: #666;
+            font-size: 11px;
+            font-weight: 600;
             letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 2px;
         }
-
         .btn-filtro {
-            background: rgba(255, 255, 255, 0.15);
-            color: #fff;
-            border: 2px solid rgba(255, 255, 255, 0.35);
-            padding: 8px 22px;
-            border-radius: 20px;
-            font-size: 15px;
-            font-weight: bold;
+            background: #fff;
+            border: 2px solid #dee2e6;
+            color: #2c3e50;
+            padding: 7px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all .2s;
         }
-
         .btn-filtro:hover {
-            background: rgba(255, 255, 255, 0.3);
+            background: #e9ecef;
+            border-color: #adb5bd;
         }
-
         .btn-filtro.activo {
-            background: #33bc21;
-            border-color: #28a31a;
-            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+            background: #2e7d32;
+            border-color: #1b5e20;
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(46,125,50,.3);
         }
 
-        @media (max-width: 768px) {
-            .reloj {
-                font-size: 48px;
-                letter-spacing: 5px;
-            }
+        /* === GRID DE MESAS === */
+        .panel-mesas {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 24px;
+            padding: 28px;
+        }
 
-            .titulo-mesa {
-                font-size: 32px;
-            }
+        .mesa-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid #dee2e6;
+            box-shadow: 0 4px 20px rgba(0,0,0,.1);
+            display: flex;
+            flex-direction: column;
+            transition: transform .2s, box-shadow .2s;
+        }
+        .mesa-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 30px rgba(0,0,0,.15);
+        }
 
-            .articulo {
-                flex-direction: column;
-                text-align: center;
-            }
+        /* Header de la tarjeta */
+        .mesa-card-header {
+            background: #2e7d32;
+            padding: 20px 20px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            border-bottom: 3px solid #1b5e20;
+        }
 
-            .articulo-nombre {
-                font-size: 24px;
-                margin-bottom: 15px;
-            }
+        /* Fila superior: número de mesa + botón avisar */
+        .mesa-header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+        .mesa-numero {
+            font-size: 2.6rem;
+            font-weight: bold;
+            color: #fff;
+            line-height: 1;
+            letter-spacing: 2px;
+        }
+        .btn-avisar-top {
+            background: #1565c0;
+            color: #fff;
+            border: none;
+            padding: 11px 22px;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,.2);
+            transition: all .2s;
+            white-space: nowrap;
+        }
+        .btn-avisar-top:hover {
+            background: #0d47a1;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,.25);
+        }
+        .btn-avisar-top:disabled {
+            background: #6c757d;
+            transform: none;
+            box-shadow: none;
+        }
 
-            .articulo-cantidad {
-                margin-bottom: 15px;
-                min-width: 80px;
-                padding: 15px 20px;
-                font-size: 32px;
-            }
+        /* Separador */
+        .mesa-header-sep {
+            border: none;
+            border-top: 1px solid rgba(255,255,255,.25);
+            margin: 0 0 12px;
+        }
+
+        /* Info inferior: mozo, hora, badge */
+        .mesa-info-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255,255,255,.95);
+            margin-bottom: 8px;
+        }
+        .mesa-info-row:last-child { margin-bottom: 0; }
+        .mesa-info-label {
+            color: rgba(255,255,255,.65);
+            font-size: .82rem;
+            min-width: 60px;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+        }
+        .mesa-info-valor {
+            font-weight: 600;
+            font-size: 1.1rem;
+            flex: 1;
+        }
+        .mesa-info-valor.hora {
+            font-size: 1rem;
+        }
+        .tiempo-badge {
+            font-size: .82rem;
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 6px;
+            background: rgba(0,0,0,.3);
+            color: #fff;
+            white-space: nowrap;
+        }
+        .tiempo-badge.urgente      { background: #c62828; }
+        .tiempo-badge.advertencia  { background: #e65100; }
+
+        /* Items */
+        .mesa-card-body { padding: 16px 18px; flex: 1; background: white; }
+
+        .item-cocina {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .item-cocina:last-child { border-bottom: none; }
+
+        .item-cantidad {
+            background: #2c3e50;
+            color: #fff;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+        .item-nombre { flex: 1; font-size: 1.1rem; font-weight: 600; color: #2c3e50; line-height: 1.3; }
+        .tipo-badge {
+            font-size: .78rem;
+            padding: 4px 10px;
+            border-radius: 6px;
+            background: #f8f9fa;
+            color: #555;
+            border: 1px solid #dee2e6;
+            white-space: nowrap;
+            font-weight: 600;
+        }
+        .item-hora { font-size: .8rem; color: #666; white-space: nowrap; font-weight: 600; }
+
+        /* Notas */
+        .mesa-notas {
+            background: #fff9c4;
+            color: #3d2b00;
+            padding: 12px 18px;
+            font-size: .92rem;
+            border-top: 3px solid #f9a825;
+            line-height: 1.5;
+        }
+        .mesa-notas strong { display: block; margin-bottom: 4px; color: #7d5a00; font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; }
+
+        /* Sin footer (botón movido al header) */
+
+        /* Sin pedidos */
+        .sin-pedidos {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+            font-size: 1.1rem;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,.08);
         }
 
         @keyframes slideIn {
-            from {
-                transform: translateX(400px);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
+            from { transform: translateX(400px); opacity: 0; }
+            to   { transform: translateX(0);     opacity: 1; }
         }
-
         @keyframes slideOut {
-            from {
-                transform: translateX(0);
-                opacity: 1;
-            }
-            to {
-                transform: translateX(400px);
-                opacity: 0;
-            }
+            from { transform: translateX(0);     opacity: 1; }
+            to   { transform: translateX(400px); opacity: 0; }
         }
 
-            .articulo-hora {
-                margin-left: 0;
-            }
+        @media (max-width: 768px) {
+            .header-cocina { padding: 14px 16px; }
+            .header-cocina h1 { font-size: 1.2rem; }
+            .reloj { font-size: 1.3rem; letter-spacing: 2px; }
+            .panel-mesas { grid-template-columns: 1fr; padding: 14px; }
         }
-
         @media (max-width: 480px) {
-            .reloj {
-                font-size: 36px;
-                letter-spacing: 3px;
-            }
-
-            .titulo-mesa {
-                font-size: 24px;
-            }
-
-            .contenido-cocina {
-                padding: 20px;
-            }
-
-            .articulo {
-                padding: 15px;
-            }
-
-            .articulo-nombre {
-                font-size: 18px;
-            }
-
-            .articulo-cantidad {
-                font-size: 28px;
-                padding: 12px 15px;
-                min-width: 70px;
-            }
+            .header-cocina h1 { font-size: 1rem; }
+            .reloj { font-size: 1rem; letter-spacing: 1px; }
+            .item-nombre { font-size: .9rem; }
         }
     </style>
 </head>
 <body>
-    <div class="container-cocina">
-        <!-- HEADER CON RELOJ EN TIEMPO REAL -->
-        <div class="header-cocina">
-            <div class="reloj-container">
-                <div class="reloj" id="relojActual">00:00:00</div>
+
+<!-- ============================
+     HEADER
+============================= -->
+<div class="header-cocina">
+    <a href="menu_principal.php" class="btn-volver">← Menú</a>
+    <h1>PANEL DE COCINA</h1>
+    <div class="reloj" id="reloj">00:00:00</div>
+</div>
+
+<!-- CONTADORES -->
+<div class="contadores-bar">
+    <span>Mesas con pedidos: <strong id="cnt-mesas"><?php echo count($porMesa); ?></strong></span>
+    <span>Items para cocinar: <strong id="cnt-items"><?php
+        $totalItems = 0;
+        foreach ($porMesa as $d) {
+            foreach ($d['items'] as $i) $totalItems += $i['cantidad'];
+        }
+        echo $totalItems;
+    ?></strong></span>
+</div>
+
+<!-- FILTROS -->
+<div class="filtros-bar">
+    <label>FILTRAR:</label>
+    <button class="btn-filtro activo" onclick="filtrar('todos', this)">Todos</button>
+    <?php foreach ($tiposGlobales as $tipo): ?>
+        <button class="btn-filtro" onclick="filtrar('<?php echo htmlspecialchars($tipo, ENT_QUOTES); ?>', this)">
+            <?php echo htmlspecialchars($tipo); ?>
+        </button>
+    <?php endforeach; ?>
+</div>
+
+<!-- GRID DE MESAS -->
+<div class="panel-mesas">
+<?php if (empty($porMesa)): ?>
+    <div class="sin-pedidos">No hay pedidos de comida pendientes.</div>
+<?php else: ?>
+    <?php foreach ($porMesa as $d):
+        $mesaNum = $d['mesa'];
+        $notaCarta = $notas[$mesaNum] ?? ''; ?>
+    <div class="mesa-card" data-mesa="<?php echo $mesaNum; ?>">
+
+        <!-- Cabecera de tarjeta -->
+        <div class="mesa-card-header">
+
+            <!-- Fila superior: número + botón avisar -->
+            <div class="mesa-header-top">
+                <div class="mesa-numero">MESA <?php echo str_pad($mesaNum, 2, '0', STR_PAD_LEFT); ?></div>
+                <button class="btn-avisar-top" onclick="avisarMozo(<?php echo $mesaNum; ?>, this)">
+                    Avisar Mozo
+                </button>
             </div>
 
-            <div class="titulo-mesa">MESA <?php echo str_pad($numeroMesa, 2, '0', STR_PAD_LEFT); ?></div>
+            <hr class="mesa-header-sep">
 
-            <div class="info-pedido">
-                <div class="info-mozo">
-                    👨‍🍳 <strong>Mozo:</strong> <?php echo htmlspecialchars($mozo); ?>
-                </div>
-                <div class="info-hora">
-                    🕐 <strong>Pedido llegó:</strong> <span id="horaPedido"><?php echo date('H:i:s', strtotime($horaPedido)); ?></span>
-                </div>
-                <div class="tiempo-transcurrido">
-                    ⏱️ <strong>Tiempo:</strong> <span id="tiempoTranscurrido">0s</span>
-                </div>
+            <!-- Mozo -->
+            <div class="mesa-info-row">
+                <span class="mesa-info-label">Mozo:</span>
+                <span class="mesa-info-valor"><?php echo htmlspecialchars($d['mozo']); ?></span>
             </div>
+
+            <!-- Hora de llegada + badge de tiempo -->
+            <div class="mesa-info-row">
+                <span class="mesa-info-label">Pedido:</span>
+                <span class="mesa-info-valor hora"><?php echo date('H:i', strtotime($d['hora'])); ?>h</span>
+                <div class="tiempo-badge" data-hora="<?php echo htmlspecialchars($d['hora']); ?>">--:--</div>
+            </div>
+
         </div>
 
-        <!-- FILTROS POR TIPO DE PRODUCTO -->
-        <?php if (count($tipos) > 1): ?>
-        <div class="filtros-cocina">
-            <div class="filtros-cocina-titulo">FILTRAR POR TIPO</div>
-            <button class="btn-filtro activo" data-tipo="todos" onclick="filtrarTipo('todos', this)">🍽️ Todos</button>
-            <?php foreach ($tipos as $tipo): ?>
-                <button class="btn-filtro" data-tipo="<?php echo htmlspecialchars($tipo); ?>" onclick="filtrarTipo('<?php echo htmlspecialchars($tipo); ?>', this)">
-                    <?php echo htmlspecialchars($tipo); ?>
-                </button>
+        <!-- Items de comida -->
+        <div class="mesa-card-body">
+            <?php foreach ($d['items'] as $item): ?>
+            <div class="item-cocina" data-tipo="<?php echo htmlspecialchars($item['tipo_producto']); ?>">
+                <div class="item-cantidad"><?php echo (int)$item['cantidad']; ?></div>
+                <div class="item-nombre"><?php echo htmlspecialchars($item['nombre']); ?></div>
+                <div class="tipo-badge"><?php echo htmlspecialchars($item['tipo_producto']); ?></div>
+                <div class="item-hora"><?php echo date('H:i', strtotime($item['fecha_hora'])); ?></div>
+            </div>
             <?php endforeach; ?>
+        </div>
+
+        <?php if (!empty($notaCarta)): ?>
+        <div class="mesa-notas">
+            <strong>Nota:</strong>
+            <?php echo nl2br(htmlspecialchars($notaCarta)); ?>
         </div>
         <?php endif; ?>
 
-        <!-- CONTENIDO: ÓRDENES A COCINAR -->
-        <div class="contenido-cocina">
-            <?php if (count($pedido) > 0): ?>
-                <div class="ordenes-container">
-                    <?php foreach ($pedido as $item): ?>
-                        <div class="articulo" data-tipo="<?php echo htmlspecialchars($item['tipo_producto']); ?>">
-                            <div class="articulo-nombre">
-                                <?php echo htmlspecialchars($item['nombre']); ?>
-                            </div>
-                            <div class="articulo-cantidad">
-                                <?php echo $item['cantidad']; ?>
-                            </div>
-                            <div class="articulo-hora">
-                                <?php echo date('H:i:s', strtotime($item['fecha_hora'])); ?>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-            <?php else: ?>
-                <div class="sin-ordenes">
-                    <p>Sin órdenes para preparar en esta mesa</p>
-                </div>
-            <?php endif; ?>
-
-            <?php if (!empty($notasMesa)): ?>
-            <div style="margin-top:25px; background:linear-gradient(135deg,#fff9c4,#fff3a0); border-left:6px solid #f39c12;
-                         border-radius:8px; padding:18px 22px; box-shadow:0 3px 10px rgba(0,0,0,0.15);">
-                <div style="font-size:18px; font-weight:bold; color:#7d5a00; margin-bottom:8px;">&#128203; Notas del pedido:</div>
-                <div style="font-size:20px; color:#3d2b00; white-space:pre-wrap;"><?php echo htmlspecialchars($notasMesa); ?></div>
-            </div>
-            <?php endif; ?>
-        </div>
-
-        <!-- PIE DE PÁGINA -->
-        <div class="pie-cocina">
-            <button class="btn-avisar-mozo" onclick="avisarMozo()"><span class="campana-icon">🔔</span> Pedido Listo</button>
-            <button class="btn-volver" onclick="volverMenu()">← Volver al Menú</button>
-        </div>
     </div>
+    <?php endforeach; ?>
+<?php endif; ?>
+</div>
 
-    <script>
-        const numeroMesa = <?php echo $numeroMesa; ?>;
-        const horaPedidoInicial = new Date('<?php echo $horaPedido; ?>'.replace(' ', 'T'));
+<script>
+// ─── Reloj ───────────────────────────────────────────────────────────────────
+function actualizarReloj() {
+    const a = new Date();
+    document.getElementById('reloj').textContent =
+        String(a.getHours()).padStart(2,'0') + ':' +
+        String(a.getMinutes()).padStart(2,'0') + ':' +
+        String(a.getSeconds()).padStart(2,'0');
+}
+setInterval(actualizarReloj, 1000);
+actualizarReloj();
 
-        // Actualizar reloj en tiempo real
-        function actualizarReloj() {
-            const ahora = new Date();
-            const horas = String(ahora.getHours()).padStart(2, '0');
-            const minutos = String(ahora.getMinutes()).padStart(2, '0');
-            const segundos = String(ahora.getSeconds()).padStart(2, '0');
-            document.getElementById('relojActual').textContent = `${horas}:${minutos}:${segundos}`;
+// ─── Temporizadores por mesa ─────────────────────────────────────────────────
+function actualizarTiempos() {
+    document.querySelectorAll('.tiempo-badge[data-hora]').forEach(badge => {
+        const hora = new Date(badge.dataset.hora.replace(' ','T'));
+        const min  = Math.floor((Date.now() - hora) / 60000);
+        const seg  = Math.floor(((Date.now() - hora) % 60000) / 1000);
+        badge.textContent = min > 0 ? `${min}m ${seg}s` : `${seg}s`;
+        badge.className = 'tiempo-badge' +
+            (min >= 20 ? ' urgente' : min >= 10 ? ' advertencia' : '');
+    });
+}
+setInterval(actualizarTiempos, 1000);
+actualizarTiempos();
 
-            // Calcular tiempo transcurrido
-            const diferencia = ahora - horaPedidoInicial;
-            const minutosTrans = Math.floor(diferencia / 60000);
-            const segundosTrans = Math.floor((diferencia % 60000) / 1000);
+// ─── Filtro cross-mesa ───────────────────────────────────────────────────────
+function filtrar(tipo, btn) {
+    document.querySelectorAll('.btn-filtro').forEach(b => b.classList.remove('activo'));
+    btn.classList.add('activo');
+    sessionStorage.setItem('filtro_cocina', tipo);
 
-            let tiempoTexto = '';
-            if (minutosTrans > 0) {
-                tiempoTexto = `${minutosTrans}m ${segundosTrans}s`;
-            } else {
-                tiempoTexto = `${segundosTrans}s`;
-            }
-
-            document.getElementById('tiempoTranscurrido').textContent = tiempoTexto;
+    document.querySelectorAll('.mesa-card').forEach(card => {
+        if (tipo === 'todos') {
+            card.style.display = '';
+            card.querySelectorAll('.item-cocina').forEach(i => i.style.display = '');
+            return;
         }
+        // Mostrar solo items del tipo seleccionado
+        let hayItems = false;
+        card.querySelectorAll('.item-cocina').forEach(item => {
+            const coincide = item.dataset.tipo === tipo;
+            item.style.display = coincide ? '' : 'none';
+            if (coincide) hayItems = true;
+        });
+        // Ocultar toda la tarjeta si no tiene items de ese tipo
+        card.style.display = hayItems ? '' : 'none';
+    });
+}
 
-        // Actualizar cada segundo
-        setInterval(actualizarReloj, 1000);
-        actualizarReloj(); // Llamada inicial
+// Restaurar filtro al recargar
+const filtroGuardado = sessionStorage.getItem('filtro_cocina');
+if (filtroGuardado && filtroGuardado !== 'todos') {
+    const btnGuardado = Array.from(document.querySelectorAll('.btn-filtro'))
+        .find(b => b.textContent.trim() === filtroGuardado);
+    if (btnGuardado) filtrar(filtroGuardado, btnGuardado);
+}
 
-        // Recargar la página cada 5 segundos para obtener nuevas órdenes
-        setInterval(() => {
-            location.reload();
-        }, 5000);
-
-        function filtrarTipo(tipo, btn) {
-            document.querySelectorAll('.btn-filtro').forEach(b => b.classList.remove('activo'));
-            btn.classList.add('activo');
-            sessionStorage.setItem('filtro_cocina_' + numeroMesa, tipo);
-            document.querySelectorAll('.articulo').forEach(art => {
-                art.style.display = (tipo === 'todos' || art.dataset.tipo === tipo) ? '' : 'none';
-            });
-        }
-
-        // Restaurar filtro seleccionado tras recarga automática
-        const filtroGuardado = sessionStorage.getItem('filtro_cocina_' + numeroMesa);
-        if (filtroGuardado && filtroGuardado !== 'todos') {
-            const btnGuardado = document.querySelector(`.btn-filtro[data-tipo="${filtroGuardado}"]`);
-            if (btnGuardado) filtrarTipo(filtroGuardado, btnGuardado);
-        }
-
-        function volverMenu() {
-            window.location.href = 'menu_principal.php';
-        }
-
-        function avisarMozo() {
-            // Crear una solicitud AJAX para notificar al mozo
-            const formData = new FormData();
-            formData.append('action', 'notificar_pedido_listo');
-            formData.append('mesa', numeroMesa);
-
-            fetch('api.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Mostrar notificación visual
-                    mostrarNotificacionExito('Mozo notificado: Pedido de mesa ' + numeroMesa + ' listo');
-                } else {
-                    mostrarNotificacionError('Error al notificar al mozo');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                mostrarNotificacionError('Error de conexión');
-            });
-        }
-
-        function mostrarNotificacionExito(mensaje) {
-            const notif = document.createElement('div');
-            notif.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                background: #4CAF50;
-                color: white;
-                padding: 20px 30px;
-                border-radius: 8px;
-                font-size: 16px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                z-index: 10000;
-                animation: slideIn 0.3s ease-out;
-            `;
-            notif.textContent = '✓ ' + mensaje;
-            document.body.appendChild(notif);
-            
+// ─── Avisar mozo ─────────────────────────────────────────────────────────────
+function avisarMozo(mesa, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+    const fd = new FormData();
+    fd.append('action', 'notificar_pedido_listo');
+    fd.append('mesa', mesa);
+    fetch('api.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(d => {
+            btn.textContent = d.success ? 'Avisado!' : 'Error';
+            btn.style.background = d.success ? '#2e7d32' : '#c62828';
             setTimeout(() => {
-                notif.style.animation = 'slideOut 0.3s ease-out';
-                setTimeout(() => notif.remove(), 300);
+                btn.textContent = 'Avisar Mozo';
+                btn.style.background = '';
+                btn.disabled = false;
             }, 3000);
-        }
+        })
+        .catch(() => {
+            btn.textContent = 'Error';
+            btn.disabled = false;
+        });
+}
 
-        function mostrarNotificacionError(mensaje) {
-            const notif = document.createElement('div');
-            notif.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                background: #f44336;
-                color: white;
-                padding: 20px 30px;
-                border-radius: 8px;
-                font-size: 16px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                z-index: 10000;
-                animation: slideIn 0.3s ease-out;
-            `;
-            notif.textContent = '✗ ' + mensaje;
-            document.body.appendChild(notif);
-            
-            setTimeout(() => {
-                notif.style.animation = 'slideOut 0.3s ease-out';
-                setTimeout(() => notif.remove(), 300);
-            }, 3000);
-        }
-    </script>
-
-    <footer class="footer-global">
-        Sistema de Gesti&oacute;n de Restaurante &mdash; Versi&oacute;n 1.0
-    </footer>
+// ─── Auto-recarga cada 8 segundos ────────────────────────────────────────────
+setInterval(() => location.reload(), 8000);
+</script>
 </body>
 </html>

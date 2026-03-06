@@ -54,6 +54,20 @@ try {
     $tmpConn->exec("ALTER TABLE `mesa pedido` ADD COLUMN `notas` TEXT NULL DEFAULT NULL");
 } catch(Exception $e) { /* columna ya existe, ignorar */ }
 
+// Crear tabla resumenes_diarios si no existe
+try {
+    $tmpConn2 = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS);
+    $tmpConn2->exec("CREATE TABLE IF NOT EXISTS `resumenes_diarios` (
+        `id`        INT AUTO_INCREMENT PRIMARY KEY,
+        `fecha`     DATE        NOT NULL,
+        `hora`      TIME        NOT NULL,
+        `mesa`      INT         NOT NULL,
+        `total`     DECIMAL(10,2) NOT NULL DEFAULT 0,
+        `productos` TEXT        NULL,
+        INDEX `idx_fecha` (`fecha`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+} catch(Exception $e) { /* tabla ya existe o error ignorado */ }
+
 // Función para requerir nivel específico
 function requireNivel($nivel) {
     requireAuth();

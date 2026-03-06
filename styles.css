@@ -7,7 +7,7 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: #dde1e7;
     min-height: 100vh;
     padding-bottom: 45px;
 }
@@ -71,7 +71,7 @@ body {
 
 .form-control:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: #888;
 }
 
 .button-group {
@@ -92,14 +92,14 @@ body {
 }
 
 .btn-primary {
-    background: #667eea;
+    background: #1565c0;
     color: white;
 }
 
 .btn-primary:hover {
-    background: #5568d3;
+    background: #0d47a1;
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.18);
 }
 
 .btn-secondary {
@@ -112,21 +112,21 @@ body {
 }
 
 .btn-success {
-    background: #28a745;
+    background: #2e7d32;
     color: white;
 }
 
 .btn-success:hover {
-    background: #218838;
+    background: #1b5e20;
 }
 
 .btn-danger {
-    background: #dc3545;
+    background: #c62828;
     color: white;
 }
 
 .btn-danger:hover {
-    background: #c82333;
+    background: #b71c1c;
 }
 
 .btn-warning {
@@ -247,27 +247,27 @@ body {
 }
 
 .mesa-libre {
-    background: #28a745;
-    border-color: #28a745;
+    background: #2e7d32;
+    border-color: #1b5e20;
     color: white;
 }
 
 .mesa-ocupada {
-    background: #dc3545;
-    border-color: #dc3545;
+    background: #c62828;
+    border-color: #b71c1c;
     color: white;
 }
 
 .mesa-lista {
-    background: #f39c12;
-    border-color: #e67e22;
+    background: #e65100;
+    border-color: #bf360c;
     color: white;
     animation: pulseLista 1.4s ease-in-out infinite;
 }
 
 @keyframes pulseLista {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(243, 156, 18, 0.6); }
-    50%       { box-shadow: 0 0 0 8px rgba(243, 156, 18, 0); }
+    0%, 100% { box-shadow: 0 0 0 0 rgba(230, 81, 0, 0.5); }
+    50%       { box-shadow: 0 0 0 8px rgba(230, 81, 0, 0); }
 }
 
 .mesa-estado-listo {
@@ -334,11 +334,11 @@ body {
 }
 
 .stat-value.libre {
-    color: #28a745;
+    color: #2e7d32;
 }
 
 .stat-value.ocupada {
-    color: #dc3545;
+    color: #c62828;
 }
 
 .help-text {
@@ -367,7 +367,7 @@ body {
     align-items: center;
     margin-bottom: 20px;
     padding-bottom: 15px;
-    border-bottom: 3px solid #667eea;
+    border-bottom: 3px solid #999;
 }
 
 .pedido-header h1 {
@@ -551,7 +551,7 @@ tbody tr:hover {
     text-align: center;
     margin-bottom: 30px;
     padding-bottom: 20px;
-    border-bottom: 3px solid #667eea;
+    border-bottom: 3px solid #999;
 }
 
 .reporte-header h1 {
@@ -566,7 +566,7 @@ tbody tr:hover {
 }
 
 .tabla-resumen thead {
-    background: #667eea;
+    background: #4a5568;
 }
 
 .tabla-resumen tfoot {
