@@ -48,6 +48,12 @@ function requireAuth() {
     }
 }
 
+// Agregar columna 'notas' a mesa pedido si no existe (ejecución única silenciosa)
+try {
+    $tmpConn = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS);
+    $tmpConn->exec("ALTER TABLE `mesa pedido` ADD COLUMN `notas` TEXT NULL DEFAULT NULL");
+} catch(Exception $e) { /* columna ya existe, ignorar */ }
+
 // Función para requerir nivel específico
 function requireNivel($nivel) {
     requireAuth();

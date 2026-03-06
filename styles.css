@@ -9,6 +9,7 @@ body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
+    padding-bottom: 45px;
 }
 
 /* ===== LOGIN ===== */
@@ -255,6 +256,32 @@ body {
     background: #dc3545;
     border-color: #dc3545;
     color: white;
+}
+
+.mesa-lista {
+    background: #f39c12;
+    border-color: #e67e22;
+    color: white;
+    animation: pulseLista 1.4s ease-in-out infinite;
+}
+
+@keyframes pulseLista {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(243, 156, 18, 0.6); }
+    50%       { box-shadow: 0 0 0 8px rgba(243, 156, 18, 0); }
+}
+
+.mesa-estado-listo {
+    font-size: 12px;
+    margin-top: 5px;
+    font-weight: bold;
+    opacity: 0.95;
+}
+
+.mesa-mozo-listo {
+    font-size: 11px;
+    margin-top: 3px;
+    opacity: 0.88;
+    font-style: italic;
 }
 
 .mesa-numero {
@@ -560,6 +587,21 @@ tbody tr:hover {
     margin-top: 30px;
 }
 
+/* ===== FOOTER GLOBAL ===== */
+.footer-global {
+    background: #2c3e50;
+    color: rgba(255, 255, 255, 0.75);
+    text-align: center;
+    padding: 12px 20px;
+    font-size: 13px;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    z-index: 500;
+    letter-spacing: 0.5px;
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 1024px) {
     .paneles-container {
@@ -598,7 +640,7 @@ tbody tr:hover {
 }
 
 @media print {
-    .btn, .menu-bar, .filtros-panel, .acciones-panel, .acciones-reporte {
+    .btn, .menu-bar, .filtros-panel, .acciones-panel, .acciones-reporte, .footer-global {
         display: none !important;
     }
     

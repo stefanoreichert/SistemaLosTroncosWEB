@@ -147,5 +147,9 @@ $notificaciones = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <button class="boton-volver" onclick="location.href='menu_principal.php'">← Volver al Menú</button>
         </div>
     </div>
+
+    <footer class="footer-global">
+        Sistema de Gesti&oacute;n de Restaurante &mdash; Versi&oacute;n 1.0
+    </footer>
 </body>
 </html>

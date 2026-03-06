@@ -22,6 +22,19 @@ function obtenerEstadoMesas() {
 $estadoMesas = obtenerEstadoMesas();
 $libres = 40 - count($estadoMesas);
 $ocupadas = count($estadoMesas);
+
+// Obtener mesas cuyo pedido está listo (notificación sin leer)
+function obtenerMesasListas() {
+    $conn = getConnection();
+    $sql = "SELECT DISTINCT `mesa`, `mensaje` FROM `notificaciones` WHERE `tipo` = 'pedido_listo' AND `leido` = 0";
+    $stmt = $conn->query($sql);
+    $result = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $result[$row['mesa']] = $row['mensaje'];
+    }
+    return $result;
+}
+$mesasListas = obtenerMesasListas(); // [numeroMesa => mensaje]
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -41,6 +54,7 @@ $ocupadas = count($estadoMesas);
                 <button class="btn btn-sm" onclick="location.href='reportes.php?tipo=dia'">📊 Resumen del Día</button>
                 <button class="btn btn-sm" onclick="location.href='reportes.php?tipo=mes'">📅 Resumen del Mes</button>
             <?php endif; ?>
+            <button class="btn btn-sm" onclick="location.href='perfil.php'">👤 Perfil</button>
             <button class="btn btn-sm btn-secondary" onclick="if(confirm('¿Desea salir?')) location.href='logout.php'">Salir</button>
         </div>
     </div>
@@ -56,7 +70,13 @@ $ocupadas = count($estadoMesas);
                     <?php for ($i = 1; $i <= 40; $i++): ?>
                         <?php 
                             $ocupada = isset($estadoMesas[$i]);
-                            $clase = $ocupada ? 'mesa-ocupada' : 'mesa-libre';
+                            $lista   = isset($mesasListas[$i]);
+                            $mensajeLista = $mesasListas[$i] ?? '';
+                            if ($lista) {
+                                $clase = 'mesa-lista';
+                            } else {
+                                $clase = $ocupada ? 'mesa-ocupada' : 'mesa-libre';
+                            }
                             
                             // Según el nivel, diferentes restricciones
                             if ($nivel === 'cocina') {
@@ -74,10 +94,20 @@ $ocupadas = count($estadoMesas);
                             }
                         ?>
                         <?php if ($visible): ?>
-                            <div class="mesa-card <?php echo $clase; ?>" 
+                            <div id="mesa-card-<?php echo $i; ?>" class="mesa-card <?php echo $clase; ?>" 
                                  onclick="<?php echo $click; ?>"
                                  ondblclick="verPedidoRapido(<?php echo $i; ?>)">
                                 <div class="mesa-numero">Mesa <?php echo $i; ?></div>
+                                <?php if ($lista): ?>
+                                    <div class="mesa-estado-listo">✅ Listo</div>
+                                    <?php
+                                    // Extraer nombre del mozo del mensaje
+                                    preg_match('/Mozo: (.+)$/', $mensajeLista, $matches);
+                                    $mozoNombre = $matches[1] ?? '';
+                                    if ($mozoNombre): ?>
+                                    <div class="mesa-mozo-listo">👤 <?php echo htmlspecialchars($mozoNombre); ?></div>
+                                    <?php endif; ?>
+                                <?php endif; ?>
                             </div>
                         <?php endif; ?>
                     <?php endfor; ?>
@@ -103,6 +133,7 @@ $ocupadas = count($estadoMesas);
                             <?php elseif ($nivel === 'mozo'): ?>
                                 <p>• Click: Tomar pedido</p>
                                 <p>• Doble click: Ver resumen</p>
+                                <p>• <span style="color:#f39c12;">&#9632;</span> Amarillo: Pedido listo</p>
                                 <p>• Nivel: MOZO</p>
                             <?php else: ?>
                                 <p>• Click: Abrir/Editar pedido</p>
@@ -128,6 +159,8 @@ $ocupadas = count($estadoMesas);
     <script src="scripts.js"></script>
     <script>
         function abrirMesa(numeroMesa) {
+            // Navegar directamente sin limpiar el estado “listo”;
+            // el estado solo se limpia cuando el mozo agrega productos o cierra el pedido.
             window.location.href = 'ventana_pedido.php?mesa=' + numeroMesa;
         }
 
@@ -166,6 +199,57 @@ $ocupadas = count($estadoMesas);
         setInterval(() => {
             location.reload();
         }, 30000);
+
+        // Polling cada 5 segundos para actualizar mesas listas (color amarillo)
+        function actualizarMesasListas() {
+            fetch('api.php?action=obtener_mesas_listas')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+                    const mesasListas = data.mesas.map(Number);
+                    const mensajes = data.mensajes || {};
+                    document.querySelectorAll('.mesa-card').forEach(card => {
+                        const id = parseInt(card.id.replace('mesa-card-', ''));
+                        if (isNaN(id)) return;
+                        if (mesasListas.includes(id)) {
+                            card.className = 'mesa-card mesa-lista';
+                            if (!card.querySelector('.mesa-estado-listo')) {
+                                const badge = document.createElement('div');
+                                badge.className = 'mesa-estado-listo';
+                                badge.textContent = '✅ Listo';
+                                card.appendChild(badge);
+                            }
+                            // Mostrar nombre del mozo
+                            let mozoDiv = card.querySelector('.mesa-mozo-listo');
+                            const msg = mensajes[id] || '';
+                            const match = msg.match(/Mozo: (.+)$/);
+                            const mozoNombre = match ? match[1] : '';
+                            if (mozoNombre) {
+                                if (!mozoDiv) {
+                                    mozoDiv = document.createElement('div');
+                                    mozoDiv.className = 'mesa-mozo-listo';
+                                    card.appendChild(mozoDiv);
+                                }
+                                mozoDiv.textContent = '👤 ' + mozoNombre;
+                            }
+                        } else {
+                            if (card.classList.contains('mesa-lista')) {
+                                card.className = 'mesa-card mesa-ocupada';
+                                const badge = card.querySelector('.mesa-estado-listo');
+                                if (badge) badge.remove();
+                                const mozoDiv = card.querySelector('.mesa-mozo-listo');
+                                if (mozoDiv) mozoDiv.remove();
+                            }
+                        }
+                    });
+                })
+                .catch(() => {});
+        }
+        setInterval(actualizarMesasListas, 5000);
     </script>
+
+    <footer class="footer-global">
+        Sistema de Gesti&oacute;n de Restaurante &mdash; Versi&oacute;n 1.0
+    </footer>
 </body>
 </html>

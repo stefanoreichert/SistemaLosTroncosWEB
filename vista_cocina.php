@@ -16,10 +16,12 @@ $numeroMesa = isset($_GET['mesa']) ? (int)$_GET['mesa'] : 1;
 function obtenerPedidoCocina($mesa) {
     $conn = getConnection();
     $sql = "SELECT `mp`.`mesa`, `mp`.`producto_id`, `p`.`nombre`, `mp`.`cantidad`, 
-                   `mp`.`fecha_hora`, COALESCE(`u`.`nombre`, 'Desconocido') as mozo
+                   `mp`.`fecha_hora`, COALESCE(`u`.`nombre`, 'Desconocido') as mozo,
+                   COALESCE(`tp`.`Nombre`, 'Otros') as tipo_producto
             FROM `mesa pedido` AS `mp`
             JOIN `productos` AS `p` ON `mp`.`producto_id` = `p`.`id`
             LEFT JOIN `usuario` AS `u` ON `mp`.`id_mozo` = `u`.`id_usuario`
+            LEFT JOIN `tipo producto` AS `tp` ON `p`.`Id_tipo_producto` = `tp`.`Id_tipo_producto`
             WHERE `mp`.`mesa` = ?
             ORDER BY `mp`.`fecha_hora` ASC";
     $stmt = $conn->prepare($sql);
@@ -37,9 +39,22 @@ function obtenerHoraLlegadaPedido($mesa) {
     return $result['hora_llegada'] ?? date('Y-m-d H:i:s');
 }
 
+// Obtener notas del pedido
+function obtenerNotasMesa($mesa) {
+    $conn = getConnection();
+    $sql  = "SELECT COALESCE(MAX(`notas`), '') as notas FROM `mesa pedido` WHERE `mesa` = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->execute([$mesa]);
+    $row  = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row['notas'] ?? '';
+}
+
 $pedido = obtenerPedidoCocina($numeroMesa);
 $horaPedido = obtenerHoraLlegadaPedido($numeroMesa);
 $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
+$tipos = array_values(array_unique(array_column($pedido, 'tipo_producto')));
+sort($tipos);
+$notasMesa = obtenerNotasMesa($numeroMesa);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -60,9 +75,10 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
             font-family: 'Arial', sans-serif;
             min-height: 100vh;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
-            padding: 20px;
+            padding: 20px 20px 55px;
         }
  
         .container-cocina { 
@@ -262,6 +278,50 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
         .btn-avisar-mozo:hover .campana-icon {
             animation: campanaShake 0.5s ease-in-out infinite;
         }
+
+        /* ===== FILTROS DE COCINA ===== */
+        .filtros-cocina {
+            background: rgba(0, 0, 0, 0.25);
+            padding: 15px 30px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            border-bottom: 3px solid #212121;
+        }
+
+        .filtros-cocina-titulo {
+            width: 100%;
+            text-align: center;
+            color: rgba(255,255,255,0.8);
+            font-size: 13px;
+            margin-bottom: 5px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .btn-filtro {
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+            border: 2px solid rgba(255, 255, 255, 0.35);
+            padding: 8px 22px;
+            border-radius: 20px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-filtro:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-filtro.activo {
+            background: #33bc21;
+            border-color: #28a31a;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+        }
+
         @media (max-width: 768px) {
             .reloj {
                 font-size: 48px;
@@ -370,12 +430,25 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
             </div>
         </div>
 
+        <!-- FILTROS POR TIPO DE PRODUCTO -->
+        <?php if (count($tipos) > 1): ?>
+        <div class="filtros-cocina">
+            <div class="filtros-cocina-titulo">FILTRAR POR TIPO</div>
+            <button class="btn-filtro activo" data-tipo="todos" onclick="filtrarTipo('todos', this)">🍽️ Todos</button>
+            <?php foreach ($tipos as $tipo): ?>
+                <button class="btn-filtro" data-tipo="<?php echo htmlspecialchars($tipo); ?>" onclick="filtrarTipo('<?php echo htmlspecialchars($tipo); ?>', this)">
+                    <?php echo htmlspecialchars($tipo); ?>
+                </button>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
         <!-- CONTENIDO: ÓRDENES A COCINAR -->
         <div class="contenido-cocina">
             <?php if (count($pedido) > 0): ?>
                 <div class="ordenes-container">
                     <?php foreach ($pedido as $item): ?>
-                        <div class="articulo">
+                        <div class="articulo" data-tipo="<?php echo htmlspecialchars($item['tipo_producto']); ?>">
                             <div class="articulo-nombre">
                                 <?php echo htmlspecialchars($item['nombre']); ?>
                             </div>
@@ -392,6 +465,14 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
                 <div class="sin-ordenes">
                     <p>Sin órdenes para preparar en esta mesa</p>
                 </div>
+            <?php endif; ?>
+
+            <?php if (!empty($notasMesa)): ?>
+            <div style="margin-top:25px; background:linear-gradient(135deg,#fff9c4,#fff3a0); border-left:6px solid #f39c12;
+                         border-radius:8px; padding:18px 22px; box-shadow:0 3px 10px rgba(0,0,0,0.15);">
+                <div style="font-size:18px; font-weight:bold; color:#7d5a00; margin-bottom:8px;">&#128203; Notas del pedido:</div>
+                <div style="font-size:20px; color:#3d2b00; white-space:pre-wrap;"><?php echo htmlspecialchars($notasMesa); ?></div>
+            </div>
             <?php endif; ?>
         </div>
 
@@ -437,6 +518,22 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
         setInterval(() => {
             location.reload();
         }, 5000);
+
+        function filtrarTipo(tipo, btn) {
+            document.querySelectorAll('.btn-filtro').forEach(b => b.classList.remove('activo'));
+            btn.classList.add('activo');
+            sessionStorage.setItem('filtro_cocina_' + numeroMesa, tipo);
+            document.querySelectorAll('.articulo').forEach(art => {
+                art.style.display = (tipo === 'todos' || art.dataset.tipo === tipo) ? '' : 'none';
+            });
+        }
+
+        // Restaurar filtro seleccionado tras recarga automática
+        const filtroGuardado = sessionStorage.getItem('filtro_cocina_' + numeroMesa);
+        if (filtroGuardado && filtroGuardado !== 'todos') {
+            const btnGuardado = document.querySelector(`.btn-filtro[data-tipo="${filtroGuardado}"]`);
+            if (btnGuardado) filtrarTipo(filtroGuardado, btnGuardado);
+        }
 
         function volverMenu() {
             window.location.href = 'menu_principal.php';
@@ -515,5 +612,9 @@ $mozo = !empty($pedido) ? $pedido[0]['mozo'] : 'Desconocido';
             }, 3000);
         }
     </script>
+
+    <footer class="footer-global">
+        Sistema de Gesti&oacute;n de Restaurante &mdash; Versi&oacute;n 1.0
+    </footer>
 </body>
 </html>

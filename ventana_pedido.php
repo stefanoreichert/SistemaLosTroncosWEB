@@ -132,7 +132,18 @@ $total = array_sum(array_column($pedido, 'subtotal'));
                     <h2>TOTAL: <span id="totalPedido">$<?php echo number_format($total, 2); ?></span></h2>
                 </div>
 
-                <div class="acciones-panel">
+                <!-- Sección de notas / observaciones -->
+                <div style="margin-top: 20px; background:#f8f9fa; border-radius:10px; padding:20px;">
+                    <h3 style="color:#2c3e50; margin-bottom:12px; font-size:18px;">📝 Notas / Observaciones</h3>
+                    <textarea id="notasMesa" rows="4" class="form-control"
+                              placeholder="Ej: Hamburguesa sin tomate, empanadas al horno, sin cebolla..."
+                              style="resize:vertical; font-size:14px;"></textarea>
+                    <button class="btn btn-info" style="margin-top:10px; width:100%;" onclick="guardarNotas()">
+                        💾 Guardar Notas
+                    </button>
+                </div>
+
+                <div class="acciones-panel" style="margin-top:15px;">
                     <?php if ($nivel === 'admin'): ?>
                         <button class="btn btn-primary btn-lg" onclick="imprimirTicket()">
                             🖨️ Imprimir Ticket
@@ -161,14 +172,7 @@ $total = array_sum(array_column($pedido, 'subtotal'));
         let productos = [];
         let productoSeleccionado = null;
 
-        // Cargar productos al iniciar
-        document.addEventListener('DOMContentLoaded', () => {
-            cargarProductos();
-        });
-
-        function volverMenu() {
-            window.location.href = 'menu_principal.php';
-        }
+        // Cargar productos y notas al iniciar
 
         function cargarProductos() {
             fetch('api.php?action=obtener_productos')
@@ -328,6 +332,47 @@ $total = array_sum(array_column($pedido, 'subtotal'));
         function imprimirTicket() {
             window.open('imprimir_ticket.php?mesa=' + numeroMesa, '_blank');
         }
+
+        // Cargar productos y notas al iniciar
+        document.addEventListener('DOMContentLoaded', () => {
+            cargarProductos();
+            fetch('api.php?action=obtener_notas&mesa=' + numeroMesa)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('notasMesa').value = data.notas;
+                    }
+                })
+                .catch(() => {});
+        });
+
+        function volverMenu() {
+            window.location.href = 'menu_principal.php';
+        }
+
+        function guardarNotas() {
+            const notas = document.getElementById('notasMesa').value;
+            fetch('api.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'guardar_notas', mesa: numeroMesa, notas: notas })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    const btn = document.querySelector('button[onclick="guardarNotas()"]');
+                    const orig = btn.textContent;
+                    btn.textContent = '✅ Guardado';
+                    btn.style.background = '#28a745';
+                    setTimeout(() => { btn.textContent = orig; btn.style.background = ''; }, 2000);
+                }
+            })
+            .catch(() => {});
+        }
     </script>
+
+    <footer class="footer-global">
+        Sistema de Gesti&oacute;n de Restaurante &mdash; Versi&oacute;n 1.0
+    </footer>
 </body>
 </html>

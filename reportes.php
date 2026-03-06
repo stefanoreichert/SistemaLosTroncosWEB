@@ -146,5 +146,9 @@ $total = array_sum(array_column($items, 'subtotal'));
             });
         }
     </script>
+
+    <footer class="footer-global">
+        Sistema de Gesti&oacute;n de Restaurante &mdash; Versi&oacute;n 1.0
+    </footer>
 </body>
 </html>
