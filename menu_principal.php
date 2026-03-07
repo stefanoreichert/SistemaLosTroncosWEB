@@ -20,8 +20,10 @@ function obtenerEstadoMesas() {
 }
 
 $estadoMesas = obtenerEstadoMesas();
-$libres = 40 - count($estadoMesas);
-$ocupadas = count($estadoMesas);
+// Solo contar mesas regulares (1-50); excluir deliveries (101+)
+$mesasRegulares = array_filter($estadoMesas, fn($k) => $k >= 1 && $k <= 50, ARRAY_FILTER_USE_KEY);
+$ocupadas = count($mesasRegulares);
+$libres   = 50 - $ocupadas;
 
 // Obtener mesas cuyo pedido está listo (notificación sin leer)
 function obtenerMesasListas() {
@@ -46,8 +48,15 @@ function obtenerMozosActivos() {
     return intval($row['total'] ?? 0);
 }
 
+function obtenerDeliveriesActivos() {
+    $conn = getConnection();
+    $row = $conn->query("SELECT COUNT(DISTINCT `mesa`) AS total FROM `mesa pedido` WHERE `mesa` >= " . (DELIVERY_BASE + 1))->fetch(PDO::FETCH_ASSOC);
+    return intval($row['total'] ?? 0);
+}
+
 $mozosActivos = obtenerMozosActivos();
 $cantListas   = count($mesasListas);
+$cantDelivery = obtenerDeliveriesActivos();
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -60,21 +69,71 @@ $cantListas   = count($mesasListas);
 <body>
     <div class="menu-bar">
         <div class="menu-left">
-            <span class="menu-title">Sistema Restaurante Los Troncos - <?php echo ucfirst($nivel); ?> (<?php echo $usuario; ?>)</span>
+            <span class="menu-title">🍽 Los Troncos &mdash; <?php echo ucfirst($nivel); ?> <small style="opacity:.75;">(<?php echo htmlspecialchars($usuario); ?>)</small></span>
         </div>
-        <div class="menu-right">
-            <?php if ($nivel === 'admin'): ?>
-                <button class="btn btn-sm" onclick="location.href='reportes.php?tipo=dia'">Resumen del Día</button>
-                <button class="btn btn-sm" onclick="location.href='reportes.php?tipo=mes'">Resumen del Mes</button>
-                <button class="btn btn-sm" onclick="location.href='usuarios.php'">Gestión de Usuarios</button>
-            <?php endif; ?>
-            <?php if ($nivel === 'admin' || $nivel === 'cocina'): ?>
-                <button class="btn btn-sm" onclick="location.href='vista_cocina.php'">Panel Cocina</button>
-            <?php endif; ?>
-            <button class="btn btn-sm" onclick="location.href='perfil.php'">Perfil</button>
-            <button class="btn btn-sm btn-secondary" onclick="if(confirm('¿Desea salir?')) location.href='logout.php'">Salir</button>
+
+        <!-- Botón hamburguesa (visible solo en mobile via CSS) -->
+        <button class="hamburger-btn" id="hamBtn" onclick="toggleMenu()" aria-label="Menú">
+            <span></span><span></span><span></span>
+        </button>
+
+        <!-- Nav: en desktop flex normal; en mobile overlay -->
+        <div class="menu-right" id="menuRight" onclick="cerrarMenuIfOverlay(event)">
+            <div class="menu-right-inner">
+                <button class="menu-close-btn" onclick="toggleMenu()">&#x2715;</button>
+                <?php if ($nivel === 'admin'): ?>
+                    <button class="btn btn-sm" onclick="location.href='reportes.php?tipo=dia'">📊 Resumen del Día</button>
+                    <button class="btn btn-sm" onclick="location.href='reportes.php?tipo=mes'">📅 Resumen del Mes</button>
+                    <button class="btn btn-sm" onclick="location.href='usuarios.php'">👥 Gestión de Usuarios</button>
+                <?php endif; ?>
+                <?php if ($nivel === 'admin' || $nivel === 'cocina'): ?>
+                    <button class="btn btn-sm" onclick="location.href='vista_cocina.php'">🍳 Panel Cocina</button>
+                <?php endif; ?>
+                <button class="btn btn-sm" style="background:#1a237e; color:#fff;" onclick="location.href='gestionar_delivery.php'">🛵 Delivery</button>
+                <button class="btn btn-sm" onclick="location.href='perfil.php'">👤 Perfil</button>
+                <button class="btn btn-sm btn-secondary" onclick="if(confirm('¿Desea salir?')) location.href='logout.php'">🚪 Salir</button>
+            </div>
         </div>
     </div>
+    <style>
+        /* Desktop: nav inline, hamburguesa oculta */
+        .hamburger-btn { display: none; }
+        @media (min-width: 769px) {
+            .menu-right { display: flex !important; align-items: center; gap: 8px; position: static; background: none; }
+            .menu-right-inner { background: none; width: auto; height: auto; flex-direction: row; padding: 0; gap: 8px; box-shadow: none; overflow: visible; }
+            .menu-right-inner .btn { width: auto; min-height: 38px; font-size: 13px; }
+            .menu-close-btn { display: none; }
+        }
+        @media (max-width: 768px) {
+            .hamburger-btn { display: flex; }
+        }
+
+        /* ────── SECTORES ────── */
+        .mesas-main { flex: 1; min-width: 0; }
+        .sector {
+            margin-bottom: 28px;
+        }
+        .sector-titulo {
+            font-size: 1rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #5d4037;
+            padding: 6px 14px;
+            border-left: 5px solid #8d6e63;
+            background: #efebe9;
+            border-radius: 0 6px 6px 0;
+            margin-bottom: 12px;
+        }
+        .sector + .sector {
+            border-top: 2px dashed #d7ccc8;
+            padding-top: 24px;
+        }
+        @media (max-width: 768px) {
+            .sector + .sector { padding-top: 18px; }
+            .sector-titulo { font-size: .9rem; padding: 6px 10px; }
+        }
+    </style>
 
     <div class="container">
         <div class="main-content">
@@ -83,51 +142,65 @@ $cantListas   = count($mesasListas);
             </div>
 
             <div class="content-wrapper">
-                <div class="mesas-grid">
-                    <?php for ($i = 1; $i <= 40; $i++): ?>
-                        <?php 
-                            $ocupada = isset($estadoMesas[$i]);
-                            $lista   = isset($mesasListas[$i]);
-                            $mensajeLista = $mesasListas[$i] ?? '';
-                            if ($lista) {
-                                $clase = 'mesa-lista';
-                            } else {
-                                $clase = $ocupada ? 'mesa-ocupada' : 'mesa-libre';
-                            }
-                            
-                            // Según el nivel, diferentes restricciones
-                            if ($nivel === 'cocina') {
-                                // Cocina solo ve mesas ocupadas
-                                $visible = $ocupada;
-                                $click = "abrirMesa($i)";
-                            } elseif ($nivel === 'mozo') {
-                                // Mozo solo puede tomar pedidos (no puede cerrar)
-                                $visible = true;
-                                $click = "abrirMesa($i)";
-                            } else {
-                                // Admin tiene acceso completo
-                                $visible = true;
-                                $click = "abrirMesa($i)";
-                            }
-                        ?>
-                        <?php if ($visible): ?>
-                            <div id="mesa-card-<?php echo $i; ?>" class="mesa-card <?php echo $clase; ?>" 
-                                 onclick="<?php echo $click; ?>"
-                                 ondblclick="verPedidoRapido(<?php echo $i; ?>)">
-                                <div class="mesa-numero">Mesa <?php echo $i; ?></div>
-                                <?php if ($lista): ?>
-                                    <div class="mesa-estado-listo">Listo</div>
-                                    <?php
-                                    // Extraer nombre del mozo del mensaje
-                                    preg_match('/Mozo: (.+)$/', $mensajeLista, $matches);
-                                    $mozoNombre = $matches[1] ?? '';
-                                    if ($mozoNombre): ?>
-                                    <div class="mesa-mozo-listo">👤 <?php echo htmlspecialchars($mozoNombre); ?></div>
-                                    <?php endif; ?>
-                                <?php endif; ?>
-                            </div>
-                        <?php endif; ?>
-                    <?php endfor; ?>
+                <div class="mesas-main">
+
+                <?php
+                // Helper para renderizar una tarjeta de mesa
+                function renderMesaCard($i, $estadoMesas, $mesasListas, $nivel) {
+                    $ocupada      = isset($estadoMesas[$i]);
+                    $lista        = isset($mesasListas[$i]);
+                    $mensajeLista = $mesasListas[$i] ?? '';
+                    if ($lista) {
+                        $clase = 'mesa-lista';
+                    } else {
+                        $clase = $ocupada ? 'mesa-ocupada' : 'mesa-libre';
+                    }
+                    $visible = ($nivel === 'cocina') ? $ocupada : true;
+                    $click   = "abrirMesa($i)";
+                    if (!$visible) return;
+                    echo '<div id="mesa-card-' . $i . '" class="mesa-card ' . $clase . '"';
+                    echo ' onclick="' . $click . '" ondblclick="verPedidoRapido(' . $i . ')">';
+                    echo '<div class="mesa-numero">Mesa ' . $i . '</div>';
+                    if ($lista) {
+                        echo '<div class="mesa-estado-listo">Listo</div>';
+                        preg_match('/Mozo: (.+)$/', $mensajeLista, $m);
+                        $mn = $m[1] ?? '';
+                        if ($mn) echo '<div class="mesa-mozo-listo">👤 ' . htmlspecialchars($mn) . '</div>';
+                    }
+                    echo '</div>';
+                }
+                ?>
+
+                    <!-- ── Sector 1: Interior ── -->
+                    <div class="sector">
+                        <div class="sector-titulo">Interior</div>
+                        <div class="mesas-grid">
+                            <?php for ($i = 1; $i <= 10; $i++): ?>
+                                <?php renderMesaCard($i, $estadoMesas, $mesasListas, $nivel); ?>
+                            <?php endfor; ?>
+                        </div>
+                    </div>
+
+                    <!-- ── Sector 2: Balcón ── -->
+                    <div class="sector">
+                        <div class="sector-titulo">Balc&oacute;n</div>
+                        <div class="mesas-grid">
+                            <?php for ($i = 11; $i <= 16; $i++): ?>
+                                <?php renderMesaCard($i, $estadoMesas, $mesasListas, $nivel); ?>
+                            <?php endfor; ?>
+                        </div>
+                    </div>
+
+                    <!-- ── Sector 3: Patio / Afuera ── -->
+                    <div class="sector">
+                        <div class="sector-titulo">Patio / Afuera</div>
+                        <div class="mesas-grid">
+                            <?php for ($i = 17; $i <= 50; $i++): ?>
+                                <?php renderMesaCard($i, $estadoMesas, $mesasListas, $nivel); ?>
+                            <?php endfor; ?>
+                        </div>
+                    </div>
+
                 </div>
 
                 <div class="sidebar">
@@ -149,6 +222,10 @@ $cantListas   = count($mesasListas);
                             <span class="stat-label">Mozos activos:</span>
                             <span class="stat-value" style="color:#1565c0;" id="stat-mozos"><?php echo $mozosActivos; ?></span>
                         </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Deliveries activos:</span>
+                            <span class="stat-value" style="color:#1a237e;" id="stat-delivery"><?php echo $cantDelivery; ?></span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -166,6 +243,15 @@ $cantListas   = count($mesasListas);
 
     <script src="scripts.js"></script>
     <script>
+        /* ── Hamburguesa ── */
+        function toggleMenu() {
+            document.getElementById('menuRight').classList.toggle('open');
+            document.body.style.overflow =
+                document.getElementById('menuRight').classList.contains('open') ? 'hidden' : '';
+        }
+        function cerrarMenuIfOverlay(e) {
+            if (e.target === document.getElementById('menuRight')) toggleMenu();
+        }
         function abrirMesa(numeroMesa) {
             // Navegar directamente sin limpiar el estado “listo”;
             // el estado solo se limpia cuando el mozo agrega productos o cierra el pedido.
@@ -220,6 +306,8 @@ $cantListas   = count($mesasListas);
                     document.getElementById('stat-ocupadas').textContent  = data.ocupadas;
                     document.getElementById('stat-listas').textContent    = data.listas;
                     document.getElementById('stat-mozos').textContent     = data.mozos_activos;
+                    const statDel = document.getElementById('stat-delivery');
+                    if (statDel && data.deliveries_activos !== undefined) statDel.textContent = data.deliveries_activos;
 
                     // Actualizar tarjetas de mesas
                     const mesasListas = (data.mesas_listas || []).map(Number);

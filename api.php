@@ -361,6 +361,7 @@ try { // Inicia un bloque try-catch para capturar errores. getConnection() viene
                 'mesas_ocupadas'=> $mesasOcupadas,
                 'mesas_listas'  => $mesasListas,
                 'mensajes'      => $mensajes,
+                'deliveries_activos' => intval($conn->query("SELECT COUNT(DISTINCT `mesa`) FROM `mesa pedido` WHERE `mesa` >= " . (DELIVERY_BASE + 1))->fetchColumn()),
             ]);
             break;
 
@@ -476,6 +477,245 @@ try { // Inicia un bloque try-catch para capturar errores. getConnection() viene
             $stmt = $conn->prepare($sql);
             $stmt->execute([$id]);
             echo json_encode(['success' => true, 'message' => 'Usuario eliminado correctamente']);
+            break;
+
+        // ===== DELIVERY: Obtener próximo número de mesa disponible (>= 101) =====
+        case 'nuevo_delivery':
+            $ocupados = $conn->query("SELECT DISTINCT `mesa` FROM `mesa pedido` WHERE `mesa` >= " . (DELIVERY_BASE + 1))
+                             ->fetchAll(PDO::FETCH_COLUMN);
+            $ocupados = array_map('intval', $ocupados);
+            $next = null;
+            for ($n = DELIVERY_BASE + 1; $n <= DELIVERY_BASE + 99; $n++) {
+                if (!in_array($n, $ocupados)) { $next = $n; break; }
+            }
+            if ($next === null) {
+                echo json_encode(['success' => false, 'message' => 'No hay slots disponibles para delivery (máx 99 simultáneos)']);
+                break;
+            }
+            echo json_encode(['success' => true, 'mesa' => $next]);
+            break;
+
+        // ===== DELIVERY: Obtener pedido de una orden =====
+        case 'obtener_pedido_delivery':
+            $idOrden = intval($data['id_orden'] ?? 0);
+            $sqlItems = "SELECT `di`.`id`, `di`.`producto_id`, `p`.`nombre`, `di`.`cantidad`,
+                                `di`.`precio_unitario`, (`di`.`cantidad` * `di`.`precio_unitario`) AS subtotal
+                         FROM `delivery_items` AS `di`
+                         JOIN `productos` AS `p` ON `di`.`producto_id` = `p`.`id`
+                         WHERE `di`.`id_orden` = ?
+                         ORDER BY `di`.`fecha_hora`";
+            $stmtI = $conn->prepare($sqlItems);
+            $stmtI->execute([$idOrden]);
+            $items = $stmtI->fetchAll(PDO::FETCH_ASSOC);
+
+            $sqlOrden = "SELECT `do`.*, COALESCE(`u`.`nombre`, 'Desconocido') AS mozo_nombre
+                         FROM `delivery_ordenes` AS `do`
+                         LEFT JOIN `usuario` AS `u` ON `do`.`id_mozo` = `u`.`id_usuario`
+                         WHERE `do`.`id` = ?";
+            $stmtO = $conn->prepare($sqlOrden);
+            $stmtO->execute([$idOrden]);
+            $orden = $stmtO->fetch(PDO::FETCH_ASSOC);
+
+            echo json_encode(['success' => true, 'items' => $items, 'orden' => $orden]);
+            break;
+
+        // ===== DELIVERY: Agregar producto =====
+        case 'agregar_item_delivery':
+            $idOrden    = intval($data['id_orden'] ?? 0);
+            $productoId = intval($data['producto_id'] ?? 0);
+            $cantidad   = intval($data['cantidad'] ?? 1);
+
+            // Verificar si ya existe
+            $sqlCheck = "SELECT `id`, `cantidad` FROM `delivery_items` WHERE `id_orden` = ? AND `producto_id` = ?";
+            $stmtCheck = $conn->prepare($sqlCheck);
+            $stmtCheck->execute([$idOrden, $productoId]);
+            $existe = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+            // Obtener precio
+            $precioStmt = $conn->prepare("SELECT `precio` FROM `productos` WHERE `id` = ?");
+            $precioStmt->execute([$productoId]);
+            $prod = $precioStmt->fetch(PDO::FETCH_ASSOC);
+            $precio = $prod['precio'] ?? 0;
+
+            if ($existe) {
+                $sqlUpd = "UPDATE `delivery_items` SET `cantidad` = `cantidad` + ? WHERE `id` = ?";
+                $stmtUpd = $conn->prepare($sqlUpd);
+                $stmtUpd->execute([$cantidad, $existe['id']]);
+            } else {
+                $sqlIns = "INSERT INTO `delivery_items` (`id_orden`, `producto_id`, `cantidad`, `precio_unitario`) VALUES (?, ?, ?, ?)";
+                $stmtIns = $conn->prepare($sqlIns);
+                $stmtIns->execute([$idOrden, $productoId, $cantidad, $precio]);
+            }
+            echo json_encode(['success' => true, 'message' => 'Producto agregado al delivery']);
+            break;
+
+        // ===== DELIVERY: Actualizar cantidad =====
+        case 'actualizar_cantidad_delivery':
+            $itemId   = intval($data['item_id'] ?? 0);
+            $cantidad = intval($data['cantidad'] ?? 1);
+            $sql = "UPDATE `delivery_items` SET `cantidad` = ? WHERE `id` = ?";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute([$cantidad, $itemId]);
+            echo json_encode(['success' => true]);
+            break;
+
+        // ===== DELIVERY: Eliminar ítem =====
+        case 'eliminar_item_delivery':
+            $itemId = intval($data['item_id'] ?? 0);
+            $sql = "DELETE FROM `delivery_items` WHERE `id` = ?";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute([$itemId]);
+            echo json_encode(['success' => true]);
+            break;
+
+        // ===== DELIVERY: Guardar datos del cliente =====
+        case 'guardar_cliente_delivery':
+            $idOrden   = intval($data['id_orden'] ?? 0);
+            $nombre    = trim($data['cliente_nombre'] ?? '');
+            $telefono  = trim($data['cliente_telefono'] ?? '');
+            $direccion = trim($data['cliente_direccion'] ?? '');
+            $notas     = trim($data['notas'] ?? '');
+            $sql = "UPDATE `delivery_ordenes` SET `cliente_nombre` = ?, `cliente_telefono` = ?, `cliente_direccion` = ?, `notas` = ? WHERE `id` = ?";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute([$nombre ?: null, $telefono ?: null, $direccion ?: null, $notas ?: null, $idOrden]);
+            echo json_encode(['success' => true]);
+            break;
+
+        // ===== DELIVERY: Cambiar estado =====
+        case 'cambiar_estado_delivery':
+            $idOrden = intval($data['id_orden'] ?? 0);
+            $estado  = $data['estado'] ?? 'recibido';
+            $estados = ['recibido', 'preparando', 'listo'];
+            if (!in_array($estado, $estados)) {
+                echo json_encode(['success' => false, 'message' => 'Estado inválido']);
+                break;
+            }
+            if ($estado === 'listo') {
+                $sql = "UPDATE `delivery_ordenes` SET `estado` = ?, `hora_listo` = NOW() WHERE `id` = ?";
+            } else {
+                $sql = "UPDATE `delivery_ordenes` SET `estado` = ? WHERE `id` = ?";
+            }
+            $stmt = $conn->prepare($sql);
+            $stmt->execute([$estado, $idOrden]);
+            echo json_encode(['success' => true, 'estado' => $estado]);
+            break;
+
+        // ===== DELIVERY: Cerrar orden (mover a resumen) =====
+        case 'cerrar_delivery':
+            if (!esAdmin()) { echo json_encode(['success' => false, 'message' => 'Solo admin puede cerrar deliveries']); break; }
+            $idOrden = intval($data['id_orden'] ?? 0);
+
+            // Descontar stock
+            $sqlItems = "SELECT `producto_id`, `cantidad` FROM `delivery_items` WHERE `id_orden` = ?";
+            $stmtIt   = $conn->prepare($sqlItems);
+            $stmtIt->execute([$idOrden]);
+            $items = $stmtIt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($items as $it) {
+                $conn->prepare("UPDATE `productos` SET `stock` = `stock` - ? WHERE `id` = ?")->execute([$it['cantidad'], $it['producto_id']]);
+            }
+
+            // Calcular total
+            $sqlTotal = "SELECT SUM(`cantidad` * `precio_unitario`) AS total, GROUP_CONCAT(`p`.`nombre` ORDER BY `p`.`nombre` SEPARATOR ', ') AS productos
+                         FROM `delivery_items` AS `di`
+                         JOIN `productos` AS `p` ON `di`.`producto_id` = `p`.`id`
+                         WHERE `di`.`id_orden` = ?";
+            $stmtT = $conn->prepare($sqlTotal);
+            $stmtT->execute([$idOrden]);
+            $rowT = $stmtT->fetch(PDO::FETCH_ASSOC);
+
+            // Obtener datos de la orden
+            $stmtOrd = $conn->prepare("SELECT `cliente_nombre` FROM `delivery_ordenes` WHERE `id` = ?");
+            $stmtOrd->execute([$idOrden]);
+            $rowOrd = $stmtOrd->fetch(PDO::FETCH_ASSOC);
+
+            // Guardar en resumen
+            $sqlRes = "INSERT INTO `delivery_resumen_diario` (`fecha`, `hora`, `id_orden`, `total`, `productos`, `cliente_nombre`) VALUES (?, ?, ?, ?, ?, ?)";
+            $stmtRes = $conn->prepare($sqlRes);
+            $stmtRes->execute([date('Y-m-d'), date('H:i:s'), $idOrden, $rowT['total'] ?? 0, $rowT['productos'] ?? '', $rowOrd['cliente_nombre'] ?? null]);
+
+            // Marcar como cerrado
+            $conn->prepare("UPDATE `delivery_ordenes` SET `cerrado` = 1, `estado` = 'listo' WHERE `id` = ?")->execute([$idOrden]);
+            // Eliminar items
+            $conn->prepare("DELETE FROM `delivery_items` WHERE `id_orden` = ?")->execute([$idOrden]);
+
+            echo json_encode(['success' => true, 'message' => 'Delivery cerrado correctamente']);
+            break;
+
+        // ===== DELIVERY: Cancelar orden =====
+        case 'cancelar_delivery':
+            $idOrden = intval($data['id_orden'] ?? 0);
+            $conn->prepare("DELETE FROM `delivery_items` WHERE `id_orden` = ?")->execute([$idOrden]);
+            $conn->prepare("DELETE FROM `delivery_ordenes` WHERE `id` = ?")->execute([$idOrden]);
+            echo json_encode(['success' => true, 'message' => 'Delivery cancelado']);
+            break;
+
+        // ===== DELIVERY: Obtener todos los activos (para cocina y gestión) =====
+        case 'obtener_deliveries_activos':
+            $sql = "SELECT `do`.`id`, `do`.`estado`, `do`.`hora_recibido`, `do`.`hora_listo`,
+                           `do`.`cliente_nombre`, `do`.`notas`,
+                           COALESCE(`u`.`nombre`, 'Desconocido') AS mozo_nombre
+                    FROM `delivery_ordenes` AS `do`
+                    LEFT JOIN `usuario` AS `u` ON `do`.`id_mozo` = `u`.`id_usuario`
+                    WHERE `do`.`cerrado` = 0
+                    ORDER BY `do`.`hora_recibido` ASC";
+            $stmt = $conn->query($sql);
+            $ordenes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Para cada orden, obtener sus items
+            $sqlIt = "SELECT `di`.`id_orden`, `p`.`nombre`, `di`.`cantidad`, `di`.`precio_unitario`,
+                             (`di`.`cantidad` * `di`.`precio_unitario`) AS subtotal
+                      FROM `delivery_items` AS `di`
+                      JOIN `productos` AS `p` ON `di`.`producto_id` = `p`.`id`
+                      WHERE `di`.`id_orden` IN (SELECT `id` FROM `delivery_ordenes` WHERE `cerrado` = 0)
+                      ORDER BY `di`.`fecha_hora`";
+            $stmtIt = $conn->query($sqlIt);
+            $allItems = $stmtIt->fetchAll(PDO::FETCH_ASSOC);
+            $itemsPorOrden = [];
+            foreach ($allItems as $it) {
+                $itemsPorOrden[$it['id_orden']][] = $it;
+            }
+            foreach ($ordenes as &$o) {
+                $o['items'] = $itemsPorOrden[$o['id']] ?? [];
+                $o['total'] = array_sum(array_column($o['items'], 'subtotal'));
+            }
+            unset($o);
+            echo json_encode(['success' => true, 'ordenes' => $ordenes]);
+            break;
+
+        // ===== DELIVERY: Resumen del día (para imprimir_resumen) =====
+        case 'obtener_resumen_delivery_dia':
+            $fecha = date('Y-m-d');
+            // Cerrados hoy
+            $sqlC = "SELECT `drd`.`id_orden`, `drd`.`total`, `drd`.`cliente_nombre`, 'cerrado' AS estado
+                     FROM `delivery_resumen_diario` AS `drd`
+                     WHERE `drd`.`fecha` = ?";
+            $stmtC = $conn->prepare($sqlC);
+            $stmtC->execute([$fecha]);
+            $cerrados = $stmtC->fetchAll(PDO::FETCH_ASSOC);
+
+            // Abiertos ahora
+            $sqlA = "SELECT `do`.`id` AS id_orden, SUM(`di`.`cantidad` * `di`.`precio_unitario`) AS total,
+                            `do`.`cliente_nombre`, `do`.`estado`
+                     FROM `delivery_ordenes` AS `do`
+                     LEFT JOIN `delivery_items` AS `di` ON `do`.`id` = `di`.`id_orden`
+                     WHERE `do`.`cerrado` = 0 AND DATE(`do`.`hora_recibido`) = ?
+                     GROUP BY `do`.`id`";
+            $stmtA = $conn->prepare($sqlA);
+            $stmtA->execute([$fecha]);
+            $abiertos = $stmtA->fetchAll(PDO::FETCH_ASSOC);
+
+            $totalCerrado  = array_sum(array_column($cerrados, 'total'));
+            $totalAbierto  = array_sum(array_column($abiertos, 'total'));
+            $totalDelivery = $totalCerrado + $totalAbierto;
+            $countDelivery = count($cerrados) + count($abiertos);
+
+            echo json_encode([
+                'success'       => true,
+                'cerrados'      => $cerrados,
+                'abiertos'      => $abiertos,
+                'total'         => $totalDelivery,
+                'count'         => $countDelivery,
+            ]);
             break;
 
         default:

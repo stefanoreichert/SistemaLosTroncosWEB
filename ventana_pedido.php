@@ -27,20 +27,44 @@ function obtenerPedidoMesa($mesa) {
 
 $pedido = obtenerPedidoMesa($numeroMesa);
 $total = array_sum(array_column($pedido, 'subtotal'));
+
+// Detectar si es pedido Delivery
+$esDelivery  = $numeroMesa >= (DELIVERY_BASE + 1);
+$mesaLabel   = $esDelivery ? 'DELIVERY ' . ($numeroMesa - DELIVERY_BASE) : 'MESA ' . $numeroMesa;
+$tituloPage  = $esDelivery ? $mesaLabel . ' — Gestión de Pedido' : 'Mesa ' . $numeroMesa . ' - Gestión de Pedido';
+$headerStyle = $esDelivery ? 'background:#1a237e; color:#fff;' : '';
+$h1Style     = $esDelivery ? 'color:#fff;' : 'color:#2c3e50;';
+$btnBack     = $esDelivery ? '← Volver a Delivery' : '← Volver al Menú';
+$btnBackFn   = $esDelivery ? "location.href='gestionar_delivery.php'" : 'volverMenu()';
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mesa <?php echo $numeroMesa; ?> - Gestión de Pedido</title>
+    <title><?php echo htmlspecialchars($tituloPage); ?></title>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Mobile: header colúmna */
+        @media (max-width: 768px) {
+            .pedido-header { flex-direction: column; align-items: stretch; }
+            .pedido-header h1 { font-size: 15px; }
+            /* Ocultar columna ID en tabla productos */
+            .tabla-productos th:nth-child(1),
+            .tabla-productos td:nth-child(1),
+            .tabla-productos th:nth-child(5),
+            .tabla-productos td:nth-child(5) { display: none; }
+            /* En tabla pedido: ocultar precio unit */
+            .tabla-pedido th:nth-child(3),
+            .tabla-pedido td:nth-child(3) { display: none; }
+        }
+    </style>
 </head>
 <body>
     <div class="ventana-pedido">
-        <div class="pedido-header">
-            <h1>MESA <?php echo $numeroMesa; ?> - BÚSQUEDA DE PRODUCTOS</h1>
-            <button class="btn btn-secondary" onclick="volverMenu()">← Volver al Menú</button>
+        <div class="pedido-header" style="<?php echo $headerStyle; ?>">
+            <h1 style="<?php echo $h1Style; ?>"><?php echo $mesaLabel; ?> — BÚSQUEDA DE PRODUCTOS</h1>
+            <button class="btn btn-secondary" onclick="<?php echo $btnBackFn; ?>"><?php echo $btnBack; ?></button>
         </div>
 
         <!-- Panel de búsqueda y filtros -->
@@ -92,7 +116,7 @@ $total = array_sum(array_column($pedido, 'subtotal'));
 
             <!-- Panel derecho: Pedido actual -->
             <div class="panel-derecho">
-                <h3>Pedido Mesa <?php echo $numeroMesa; ?></h3>
+                <h3>Pedido <?php echo $mesaLabel; ?></h3>
                 <div class="tabla-container">
                     <table id="tablaPedido" class="tabla-pedido">
                         <thead>

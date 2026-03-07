@@ -46,11 +46,18 @@ if ($tipo === 'dia') {
     }
     usort($mesas, fn($a, $b) => $a['mesa'] - $b['mesa']);
 
-    $items          = $mesas;
-    $total_general  = array_sum(array_column($items, 'total'));
-    $titulo         = 'Resumen del Día';
-    $subtitulo      = date('d/m/Y');
-    $columnas       = ['Mesa', 'Estado', 'Total'];
+    // Separar mesas regulares de delivery (mesa > DELIVERY_BASE)
+    $items_regulares  = array_values(array_filter($mesas, fn($m) => $m['mesa'] <= DELIVERY_BASE));
+    $deliveries_dia   = array_values(array_filter($mesas, fn($m) => $m['mesa'] >  DELIVERY_BASE));
+
+    $items            = $items_regulares;
+    $total_general    = array_sum(array_column($items, 'total'));
+    $total_delivery   = array_sum(array_column($deliveries_dia, 'total'));
+    $total_gran_total = $total_general + $total_delivery;
+
+    $titulo    = 'Resumen del Día';
+    $subtitulo = date('d/m/Y');
+    $columnas  = ['Mesa', 'Estado', 'Total'];
 
 } else {
     // ── Resumen mensual: por día ──
@@ -69,6 +76,11 @@ if ($tipo === 'dia') {
     $titulo        = 'Resumen del Mes';
     $subtitulo     = date('m/Y');
     $columnas      = ['Fecha', 'Mesas', 'Total del día'];
+
+    // Variables delivery no aplican en mensual
+    $deliveries_dia   = [];
+    $total_delivery   = 0;
+    $total_gran_total = $total_general;
 }
 ?>
 <!DOCTYPE html>
@@ -240,7 +252,7 @@ if ($tipo === 'dia') {
                     <span><?php echo count($items); ?></span>
                 </div>
                 <div class="tot-row grande">
-                    <span>TOTAL DEL DÍA:</span>
+                    <span>TOTAL MESAS:</span>
                     <span>$<?php echo number_format($total_general, 0, ',', '.'); ?></span>
                 </div>
             <?php else: ?>
@@ -254,6 +266,59 @@ if ($tipo === 'dia') {
                 </div>
             <?php endif; ?>
         </div>
+
+        <?php if ($tipo === 'dia' && !empty($deliveries_dia)): ?>
+        <!-- ── Sección Delivery ── -->
+        <div style="margin-top:14px; border-top:2px dashed #000; padding-top:10px;">
+            <div style="text-align:center; font-weight:bold; font-size:12px; text-transform:uppercase; margin-bottom:6px; letter-spacing:1px;">
+                🛵 DELIVERY
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Delivery</th>
+                        <th>Estado</th>
+                        <th class="num">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($deliveries_dia as $dv): ?>
+                    <tr>
+                        <td>Delivery <?php echo $dv['mesa'] - DELIVERY_BASE; ?></td>
+                        <td><?php echo $dv['estado']; ?></td>
+                        <td class="num">$<?php echo number_format($dv['total'], 0, ',', '.'); ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <div class="totales-box" style="margin-top:8px;">
+                <div class="tot-row">
+                    <span>Pedidos delivery:</span>
+                    <span><?php echo count($deliveries_dia); ?></span>
+                </div>
+                <div class="tot-row grande">
+                    <span>TOTAL DELIVERY:</span>
+                    <span>$<?php echo number_format($total_delivery, 0, ',', '.'); ?></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Gran total ── -->
+        <div style="margin-top:10px; border-top:3px solid #000; padding-top:8px;">
+            <div class="tot-row" style="font-size:15px;">
+                <span>GRAN TOTAL DEL DÍA:</span>
+                <span>$<?php echo number_format($total_gran_total, 0, ',', '.'); ?></span>
+            </div>
+        </div>
+        <?php elseif ($tipo === 'dia'): ?>
+        <!-- Sin deliveries, igual mostrar gran total = total mesas -->
+        <div style="margin-top:10px; border-top:3px solid #000; padding-top:8px;">
+            <div class="tot-row" style="font-size:15px;">
+                <span>GRAN TOTAL DEL DÍA:</span>
+                <span>$<?php echo number_format($total_general, 0, ',', '.'); ?></span>
+            </div>
+        </div>
+        <?php endif; ?>
 
     <?php else: ?>
         <p style="text-align:center; margin: 20px 0;">Sin datos para este período.</p>

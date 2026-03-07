@@ -383,16 +383,80 @@ sort($tiposGlobales);
         }
 
         @media (max-width: 768px) {
-            .header-cocina { padding: 14px 16px; }
-            .header-cocina h1 { font-size: 1.2rem; }
-            .reloj { font-size: 1.3rem; letter-spacing: 2px; }
-            .panel-mesas { grid-template-columns: 1fr; padding: 14px; }
+            /* Header cocina */
+            .header-cocina { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+            .header-cocina h1 { font-size: 1rem; order: 2; flex: 1 1 100%; text-align: center; }
+            .btn-volver { font-size: .8rem; padding: 7px 12px; }
+            .reloj { font-size: 1.1rem; letter-spacing: 1px; }
+
+            /* Contadores */
+            .contadores-bar { flex-wrap: wrap; gap: 10px 20px; padding: 10px 14px; font-size: .82rem; }
+
+            /* Filtros */
+            .filtros-bar { padding: 10px 12px; gap: 7px; }
+            .btn-filtro { padding: 8px 14px; font-size: 13px; min-height: 40px; }
+
+            /* Grid una columna */
+            .panel-mesas { grid-template-columns: 1fr; padding: 14px; gap: 16px; }
+
+            /* Header tarjeta */
+            .mesa-card-header { padding: 14px 14px 12px; }
+            .mesa-numero { font-size: 2rem; }
+            .btn-avisar-top { padding: 10px 16px; font-size: .92rem; }
+
+            /* Items */
+            .item-nombre { font-size: 1rem; }
+            .item-cantidad { width: 40px; height: 40px; font-size: 1.1rem; }
+            .tipo-badge { font-size: .74rem; }
+
+            /* Botones de estado */
+            .btns-estado-cocina { gap: 6px; padding: 10px 12px; }
+            .btn-cambio-estado { padding: 10px 4px; font-size: .8rem; min-height: 42px; }
         }
         @media (max-width: 480px) {
-            .header-cocina h1 { font-size: 1rem; }
-            .reloj { font-size: 1rem; letter-spacing: 1px; }
+            .header-cocina h1 { font-size: .92rem; }
+            .reloj { font-size: 1rem; letter-spacing: 0; }
             .item-nombre { font-size: .9rem; }
+            .mesa-numero { font-size: 1.7rem; }
         }
+
+        /* ===== DELIVERY EN COCINA ===== */
+
+        /* Estado badge en cocina */
+        .delivery-estado-cocina {
+            display: inline-block;
+            padding: 3px 12px;
+            border-radius: 14px;
+            font-size: .8rem;
+            font-weight: 700;
+            letter-spacing: .3px;
+            color: #fff;
+        }
+        .delivery-estado-cocina.recibido  { background: #1565c0; }
+        .delivery-estado-cocina.preparando { background: #e65100; }
+        .delivery-estado-cocina.listo     { background: #388e3c; }
+
+        /* Botones de cambio de estado en cocina */
+        .btns-estado-cocina { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 18px; border-top: 1px solid #eee; background: #f8f9fa; }
+        .btn-cambio-estado {
+            flex: 1; min-width: 90px;
+            padding: 8px 6px;
+            border: 2px solid;
+            border-radius: 6px;
+            font-size: .82rem;
+            font-weight: 700;
+            cursor: pointer;
+            background: #fff;
+            transition: all .18s;
+            text-align: center;
+        }
+        .btn-cambio-estado:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,.12); }
+        .btn-cambio-estado.recibido   { color: #1565c0; border-color: #1565c0; }
+        .btn-cambio-estado.preparando { color: #e65100; border-color: #e65100; }
+        .btn-cambio-estado.listo      { color: #2e7d32; border-color: #2e7d32; }
+        .btn-cambio-estado.activo.recibido   { background: #1565c0; color: #fff; }
+        .btn-cambio-estado.activo.preparando { background: #e65100; color: #fff; }
+        .btn-cambio-estado.activo.listo      { background: #2e7d32; color: #fff; }
     </style>
 </head>
 <body>
@@ -408,14 +472,17 @@ sort($tiposGlobales);
 
 <!-- CONTADORES -->
 <div class="contadores-bar">
-    <span>Mesas con pedidos: <strong id="cnt-mesas"><?php echo count($porMesa); ?></strong></span>
-    <span>Items para cocinar: <strong id="cnt-items"><?php
-        $totalItems = 0;
+    <?php
+        $cntMesas = 0; $cntDeliveries = 0; $totalItems = 0;
         foreach ($porMesa as $d) {
+            if ($d['mesa'] >= DELIVERY_BASE + 1) $cntDeliveries++; else $cntMesas++;
             foreach ($d['items'] as $i) $totalItems += $i['cantidad'];
         }
-        echo $totalItems;
-    ?></strong></span>
+    ?>
+    <span>Pedidos activos: <strong id="cnt-total"><?php echo count($porMesa); ?></strong></span>
+    <span>🍽 Mesas: <strong id="cnt-mesas"><?php echo $cntMesas; ?></strong></span>
+    <span>🛵 Delivery: <strong id="cnt-deliveries"><?php echo $cntDeliveries; ?></strong></span>
+    <span>Items totales: <strong id="cnt-items"><?php echo $totalItems; ?></strong></span>
 </div>
 
 <!-- FILTROS -->
@@ -429,45 +496,38 @@ sort($tiposGlobales);
     <?php endforeach; ?>
 </div>
 
-<!-- GRID DE MESAS -->
+<!-- PANEL DE PEDIDOS -->
 <div class="panel-mesas">
 <?php if (empty($porMesa)): ?>
-    <div class="sin-pedidos">No hay pedidos de comida pendientes.</div>
+    <div class="sin-pedidos">No hay pedidos activos en este momento.</div>
 <?php else: ?>
     <?php foreach ($porMesa as $d):
-        $mesaNum = $d['mesa'];
-        $notaCarta = $notas[$mesaNum] ?? ''; ?>
+        $mesaNum   = $d['mesa'];
+        $notaCarta = $notas[$mesaNum] ?? '';
+        $esDelivery = $mesaNum >= DELIVERY_BASE + 1;
+        $label = $esDelivery
+            ? 'DELIVERY ' . ($mesaNum - DELIVERY_BASE)
+            : 'MESA ' . str_pad($mesaNum, 2, '0', STR_PAD_LEFT);
+    ?>
     <div class="mesa-card" data-mesa="<?php echo $mesaNum; ?>">
-
-        <!-- Cabecera de tarjeta -->
         <div class="mesa-card-header">
-
-            <!-- Fila superior: número + botón avisar -->
             <div class="mesa-header-top">
-                <div class="mesa-numero">MESA <?php echo str_pad($mesaNum, 2, '0', STR_PAD_LEFT); ?></div>
+                <div class="mesa-numero"><?php echo $label; ?></div>
                 <button class="btn-avisar-top" onclick="avisarMozo(<?php echo $mesaNum; ?>, this)">
                     Avisar Mozo
                 </button>
             </div>
-
             <hr class="mesa-header-sep">
-
-            <!-- Mozo -->
             <div class="mesa-info-row">
                 <span class="mesa-info-label">Mozo:</span>
                 <span class="mesa-info-valor"><?php echo htmlspecialchars($d['mozo']); ?></span>
             </div>
-
-            <!-- Hora de llegada + badge de tiempo -->
             <div class="mesa-info-row">
                 <span class="mesa-info-label">Pedido:</span>
                 <span class="mesa-info-valor hora"><?php echo date('H:i', strtotime($d['hora'])); ?>h</span>
                 <div class="tiempo-badge" data-hora="<?php echo htmlspecialchars($d['hora']); ?>">--:--</div>
             </div>
-
         </div>
-
-        <!-- Items de comida -->
         <div class="mesa-card-body">
             <?php foreach ($d['items'] as $item): ?>
             <div class="item-cocina" data-tipo="<?php echo htmlspecialchars($item['tipo_producto']); ?>">
@@ -478,14 +538,12 @@ sort($tiposGlobales);
             </div>
             <?php endforeach; ?>
         </div>
-
         <?php if (!empty($notaCarta)): ?>
         <div class="mesa-notas">
             <strong>Nota:</strong>
             <?php echo nl2br(htmlspecialchars($notaCarta)); ?>
         </div>
         <?php endif; ?>
-
     </div>
     <?php endforeach; ?>
 <?php endif; ?>

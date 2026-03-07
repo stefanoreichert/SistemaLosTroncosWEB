@@ -19,6 +19,13 @@ $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $total = array_sum(array_column($items, 'subtotal'));
 
+// Detectar si es un pedido Delivery
+$esDelivery  = $numeroMesa >= (DELIVERY_BASE + 1);
+$mesaLabel   = $esDelivery
+    ? 'DELIVERY ' . ($numeroMesa - DELIVERY_BASE)
+    : 'MESA ' . str_pad($numeroMesa, 2, '0', STR_PAD_LEFT);
+$ticketTipo  = $esDelivery ? 'Pedido Delivery' : 'Pedido de Mesa';
+
 // Solo descontar stock si es admin cerrando la mesa
 if ($nivel === 'admin' && isset($_GET['cerrar'])) {
     // Descontar stock
@@ -53,7 +60,7 @@ if ($nivel === 'admin' && isset($_GET['cerrar'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ticket Mesa <?php echo $numeroMesa; ?></title>
+    <title>Ticket <?php echo $mesaLabel; ?></title>
     <style>
         * {
             margin: 0;
@@ -180,12 +187,12 @@ if ($nivel === 'admin' && isset($_GET['cerrar'])) {
         <?php if ($nivel === 'mozo'): ?>
             <div class="header">
                 <h1>LOS TRONCOS</h1>
-                <p>Pedido de Mesa</p>
+                <p><?php echo $ticketTipo; ?></p>
                 <p><?php echo date('d/m/Y H:i'); ?></p>
             </div>
 
             <div class="mesa-info">
-                MESA <?php echo str_pad($numeroMesa, 2, '0', STR_PAD_LEFT); ?>
+                <?php echo $mesaLabel; ?>
             </div>
 
             <div class="items">
@@ -220,7 +227,7 @@ if ($nivel === 'admin' && isset($_GET['cerrar'])) {
             </div>
 
             <div class="mesa-info">
-                MESA <?php echo str_pad($numeroMesa, 2, '0', STR_PAD_LEFT); ?>
+                <?php echo $mesaLabel; ?>
             </div>
 
             <div class="items">
@@ -255,7 +262,7 @@ if ($nivel === 'admin' && isset($_GET['cerrar'])) {
             </div>
 
             <div class="mesa-info">
-                MESA <?php echo str_pad($numeroMesa, 2, '0', STR_PAD_LEFT); ?>
+                <?php echo $mesaLabel; ?>
             </div>
 
             <div class="items">

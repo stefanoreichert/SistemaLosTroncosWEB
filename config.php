@@ -5,6 +5,10 @@ define('DB_NAME', 'los_troncos');
 define('DB_USER', 'root');
 define('DB_PASS', '');
 
+// Rango de números de mesa reservados para Delivery
+// Delivery 1 = Mesa 101, Delivery 2 = Mesa 102, etc.
+define('DELIVERY_BASE', 100);
+
 // Conexión a la base de datos
 function getConnection() {
     try {
@@ -67,6 +71,46 @@ try {
         INDEX `idx_fecha` (`fecha`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 } catch(Exception $e) { /* tabla ya existe o error ignorado */ }
+
+// Crear tabla delivery_ordenes si no existe
+try {
+    $tmpDelivery = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS);
+    $tmpDelivery->exec("CREATE TABLE IF NOT EXISTS `delivery_ordenes` (
+        `id`                INT AUTO_INCREMENT PRIMARY KEY,
+        `id_mozo`           INT         NULL,
+        `cliente_nombre`    VARCHAR(100) NULL DEFAULT NULL,
+        `cliente_telefono`  VARCHAR(50)  NULL DEFAULT NULL,
+        `cliente_direccion` VARCHAR(200) NULL DEFAULT NULL,
+        `estado`            ENUM('recibido','preparando','listo') NOT NULL DEFAULT 'recibido',
+        `hora_recibido`     DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        `hora_listo`        DATETIME    NULL DEFAULT NULL,
+        `notas`             TEXT        NULL DEFAULT NULL,
+        `cerrado`           TINYINT(1)  NOT NULL DEFAULT 0,
+        INDEX `idx_estado`  (`estado`),
+        INDEX `idx_cerrado` (`cerrado`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    $tmpDelivery->exec("CREATE TABLE IF NOT EXISTS `delivery_items` (
+        `id`              INT AUTO_INCREMENT PRIMARY KEY,
+        `id_orden`        INT          NOT NULL,
+        `producto_id`     INT          NOT NULL,
+        `cantidad`        INT          NOT NULL DEFAULT 1,
+        `precio_unitario` DECIMAL(10,2) NOT NULL DEFAULT 0,
+        `fecha_hora`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX `idx_orden` (`id_orden`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    $tmpDelivery->exec("CREATE TABLE IF NOT EXISTS `delivery_resumen_diario` (
+        `id`             INT AUTO_INCREMENT PRIMARY KEY,
+        `fecha`          DATE         NOT NULL,
+        `hora`           TIME         NOT NULL,
+        `id_orden`       INT          NOT NULL,
+        `total`          DECIMAL(10,2) NOT NULL DEFAULT 0,
+        `productos`      TEXT         NULL,
+        `cliente_nombre` VARCHAR(100) NULL DEFAULT NULL,
+        INDEX `idx_fecha` (`fecha`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+} catch(Exception $e) { /* tablas delivery ya existen o error ignorado */ }
 
 // Función para requerir nivel específico
 function requireNivel($nivel) {
